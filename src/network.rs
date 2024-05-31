@@ -7,11 +7,13 @@ use std::time::Duration;
 use get_if_addrs::{get_if_addrs, Interface};
 use crate::packet::{Packet, PlayerData};
 
+#[derive(PartialEq)]
 pub enum Status {
     Running,
     Disconnected,
     Error
 }
+
 struct Listener {
     client: Option<(TcpStream, SocketAddr)>
 }
@@ -35,7 +37,7 @@ fn listen(listener: Arc<Mutex<Listener>>, tcp_listener: TcpListener) {
                 listener.client = None;
             }
         } 
-        sleep(Duration::from_millis(10));    
+        sleep(Duration::from_millis(1));    
     }
 }
 
@@ -60,13 +62,13 @@ fn recv(receiver: Arc<Mutex<Receiver>>, mut stream: TcpStream) {
                     println!("Error: {e}");
                 }
             },
-            Err(e) => {
+            Err(_) => {
                 let mut receiver = receiver.lock().unwrap();
                 receiver.status = Status::Error;
             }
         }
         buffer = [0; 512];
-        sleep(Duration::from_millis(10));
+        sleep(Duration::from_millis(1));
     }
 }
 
@@ -148,7 +150,8 @@ pub struct Client {
     socket_thread: Option<JoinHandle<()>>,
     addr: String,
     running: bool,
-    outgoing: Option<String>
+    outgoing: Option<String>,
+    status: Status
 }
 
 pub struct Server {
@@ -172,7 +175,8 @@ impl Client {
             socket_thread: None,
             addr: addr.to_string(),
             running: true,
-            outgoing: None
+            outgoing: None,
+            status: Status::Running
         };
         let client = Arc::new(Mutex::new(client));
         let client_clone = Arc::clone(&client);
@@ -197,6 +201,9 @@ fn receive(client: Arc<Mutex<Client>>, receiver: Arc<Mutex<Receiver>>) {
             let mut client = client.lock().unwrap();
             let incoming = {
                 let mut receiver = receiver.lock().unwrap();
+                if receiver.status != Status::Running {
+                    client.status = Status::Disconnected;
+                }
                 if let Some(_) = &client.outgoing {
                     receiver.outgoing = replace(&mut client.outgoing, None);
                 }
@@ -207,7 +214,7 @@ fn receive(client: Arc<Mutex<Client>>, receiver: Arc<Mutex<Receiver>>) {
                 client.player_data = Some(data.as_str().into());
             }
         }
-        sleep(Duration::from_millis(10));
+        sleep(Duration::from_millis(1));
     }
 }
 
@@ -278,7 +285,7 @@ fn accept(server: Arc<Mutex<Server>>, listener: Arc<Mutex<Listener>>) {
                 break;
             }
         }        
-        sleep(Duration::from_millis(10));
+        sleep(Duration::from_millis(1));
     }
 }
 
@@ -286,7 +293,7 @@ fn send(server: Arc<Mutex<Server>>) {
     loop {
         let mut active_player_data: Vec<PlayerData> = vec![];
         {
-            let server = server.lock().unwrap();
+            let mut server = server.lock().unwrap();
             if !server.running { break; }
             for client in &server.clients {
                 let client = client.lock().unwrap();
@@ -295,11 +302,22 @@ fn send(server: Arc<Mutex<Server>>) {
                 }
             }
             let packet: Packet = (&active_player_data).into();
+            let mut to_remove: Vec<usize> = vec![];
+            let mut count: usize = 0;
             for client in &server.clients {
-                let mut client = client.lock().unwrap();
-                client.send(packet.packet.clone());
+                let mut c = client.lock().unwrap();
+                c.send(packet.packet.clone());
+                if c.status != Status::Running {
+                    to_remove.push(count);
+                }
+                else {
+                    count += 1;
+                }
+            }
+            for index in to_remove {
+                server.clients.remove(index);
             }
         }
-        sleep(Duration::from_millis(160));
+        sleep(Duration::from_millis(1));
     }
 }
