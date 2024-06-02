@@ -1,6 +1,6 @@
 use std::mem::replace;
 use std::io::prelude::*;
-use std::net::{IpAddr, SocketAddr, TcpListener, TcpStream};
+use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread::{spawn, sleep, JoinHandle};
 use std::time::Duration;
@@ -14,6 +14,11 @@ pub enum Status {
     Error
 }
 
+#[derive(Debug)]
+pub enum Error {
+    BindError,
+}
+
 struct Listener {
     client: Option<(TcpStream, SocketAddr)>
 }
@@ -24,6 +29,30 @@ struct Receiver {
     status: Status
 }
 
+pub struct JoinCode {
+    _addr: String,
+    code: String,
+}
+
+pub struct Client {
+    player_data: Option<PlayerData>,
+    socket_thread: Option<JoinHandle<()>>,
+    _addr: String,
+    _running: bool,
+    outgoing: Option<String>,
+    status: Status
+}
+
+pub struct Server {
+    clients: Vec<Arc<Mutex<Client>>>,
+    connection_thread: Option<JoinHandle<()>>,
+    distribute_thread: Option<JoinHandle<()>>,
+    _listen_thread: Option<JoinHandle<()>>,
+    running: bool,
+    join_code: Option<JoinCode>,
+}
+
+
 fn listen(listener: Arc<Mutex<Listener>>, tcp_listener: TcpListener) {
     loop {
         match tcp_listener.accept() {
@@ -32,7 +61,7 @@ fn listen(listener: Arc<Mutex<Listener>>, tcp_listener: TcpListener) {
                 let mut listener = listener.lock().unwrap();
                 listener.client = Some((stream, addr));
             }
-            Err(e) => {
+            Err(_) => {
                 let mut listener = listener.lock().unwrap();
                 listener.client = None;
             }
@@ -79,16 +108,6 @@ fn num_to_letter(num: usize) -> char {
 
 fn letter_to_num(char: char) -> usize {
     char as usize
-}
-
-#[derive(Debug)]
-pub enum Error {
-    BindError,
-}
-
-pub struct JoinCode {
-    _addr: String,
-    code: String,
 }
 
 impl From<&Vec<Interface>> for JoinCode {
@@ -145,36 +164,18 @@ impl From<&String> for JoinCode {
     }
 }
 
-pub struct Client {
-    player_data: Option<PlayerData>,
-    socket_thread: Option<JoinHandle<()>>,
-    addr: String,
-    running: bool,
-    outgoing: Option<String>,
-    status: Status
-}
-
-pub struct Server {
-    clients: Vec<Arc<Mutex<Client>>>,
-    connection_thread: Option<JoinHandle<()>>,
-    distribute_thread: Option<JoinHandle<()>>,
-    listen_thread: Option<JoinHandle<()>>,
-    running: bool,
-    join_code: Option<JoinCode>,
-}
-
 impl Client {
     pub fn new(stream: TcpStream, addr: SocketAddr) -> Arc<Mutex<Client>> {
         let receiver: Arc<Mutex<Receiver>> = Arc::new(Mutex::new(Receiver { incoming: vec![], outgoing: None, status: Status::Running }));
         let recv_receiver = Arc::clone(&receiver);
-        let recv_thread = spawn(move || {
+        let _recv_thread = spawn(move || {
             recv(receiver, stream);
         });
         let client = Client {
             player_data: None,
             socket_thread: None,
-            addr: addr.to_string(),
-            running: true,
+            _addr: addr.to_string(),
+            _running: true,
             outgoing: None,
             status: Status::Running
         };
@@ -231,7 +232,7 @@ impl Server {
                 clients: vec![],
                 connection_thread: None,
                 distribute_thread: None,
-                listen_thread: Some(listen_thread),
+                _listen_thread: Some(listen_thread),
                 running: true,
                 join_code: Some((&interfaces).into()),
             };

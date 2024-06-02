@@ -2,6 +2,7 @@ mod network;
 mod packet;
 mod tilemap;
 use crate::network::Server;
+use crate::tilemap::Room;
 use std::{thread, time::Duration};
 
 fn main() {
@@ -19,4 +20,9 @@ fn main() {
             println!("ERROR: {:?}", e);
         }
     }
+}
+
+fn not_main() {
+    let test_room: Room = 0.into();
+    println!("Created new Room!\n{:?}", test_room.tilemap);
 }
