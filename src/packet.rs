@@ -1,10 +1,10 @@
 #[derive(Clone)]
 pub struct PlayerData {
-    x_position: f64,
-    y_position: f64,
+    x_position: f32,
+    y_position: f32,
     crouching: bool,
-    frame: f64,
-    direction: f64,
+    frame: i8,
+    direction: bool,
     username: String
 }
 
@@ -13,19 +13,21 @@ impl From<&str> for PlayerData {
         println!("DATA: {data}");
         let components: Vec<&str> = data.split('!').collect::<Vec<&str>>()[0].split(',').collect();
         if components.len() == 6 {
-            if let (Ok(x), Ok(y), Ok(c), Ok(f), Ok(d), n) = (
-                components[0].parse::<f64>(),
-                components[1].parse::<f64>(),
-                components[2].parse::<bool>(),
-                components[3].parse::<f64>(),
-                components[4].parse::<f64>(),
+            if let (Ok(x), Ok(y), c, Ok(f), d, n) = (
+                components[0].parse::<i16>(), // 1.001223123 -> 1001 -> 1.001
+                components[1].parse::<i16>(), // 1.001223123 -> 1001 -> 1.001
+                components[2], // Crouching (1: true, 0: false)
+                components[3].parse::<i8>(), // Frame
+                components[4], // Direction (1: RIGHT, 0: LEFT)
                 components[5]
             ) 
             {
-                return PlayerData { x_position: x, y_position: y, crouching: c, frame: f, direction: d, username: String::from(n) };
+                let x_pos: f32 = f32::from(x) * 0.001f32;
+                let y_pos: f32 = f32::from(y) * 0.001f32;
+                return PlayerData { x_position: x_pos, y_position: y_pos, crouching: c == "1", frame: f, direction: d == "1", username: String::from(n) };
             }
         }
-        PlayerData { x_position: 0.0, y_position: 0.0, crouching: false, frame: 0.0, direction: 0.0, username: String::new() }
+        PlayerData { x_position: 0.0, y_position: 0.0, crouching: false, frame: 0, direction: true, username: String::new() }
     }
 }
 
