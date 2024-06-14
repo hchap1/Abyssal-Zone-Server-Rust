@@ -26,7 +26,7 @@ impl From<&str> for PlayerData {
                 return PlayerData { x_position: x, y_position: y, crouching: c == "1", frame: f, direction: d, username: String::from(n) };
             }
         }
-        PlayerData { x_position: 0.0, y_position: 0.0, crouching: false, frame: 0, direction: 1, username: String::new() }
+        PlayerData { x_position: 0.0, y_position: 0.0, crouching: false, frame: 0, direction: 1, username: String::from("NONE") }
     }
 }
 
