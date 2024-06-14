@@ -15,7 +15,7 @@ impl From<Vec<Vec<usize>>> for Tilemap {
         //while end_room == spawn_room { end_room = [rng.gen_range(0..size), rng.gen_range(0..size)]; }
         let mut tilemap = Tilemap { 
             tilemap: vec![vec![0; size * 16]; size * 16], 
-            spawn_coordinates: [spawn_room[0] * 16 + 7, spawn_room[1] * 16 + 3] 
+            spawn_coordinates: [spawn_room[0] * 16 + 7, (size - spawn_room[1] - 1) * 16 + 3] 
         };
         room_map[spawn_room[1]][spawn_room[0]] = 0;
         for room_row in 0..size {

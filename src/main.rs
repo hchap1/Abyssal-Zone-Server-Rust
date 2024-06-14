@@ -8,7 +8,7 @@ use std::{thread, time::Duration};
 
 fn main() {
     let duration: Duration = Duration::from_millis(1000);
-    let tilemap: Tilemap = Tilemap::from(randomize_rooms(1, 3));
+    let tilemap: Tilemap = Tilemap::from(randomize_rooms(5, 3));
     match Server::new(tilemap) {
         Ok(server) => {
             {
