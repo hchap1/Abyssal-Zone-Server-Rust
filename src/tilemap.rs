@@ -1,28 +1,30 @@
-use core::fmt;
 use std::fs::read_to_string;
-use std::fmt::Display;
 use rand::Rng;
 
-pub struct Tilemap<const SIZE: usize> {
+pub struct Tilemap {
     pub tilemap: Vec<Vec<usize>>,
-    spawn_room: [usize; 2],
-    spawn_coordinates: [usize; 2],
+    pub spawn_coordinates: [usize; 2],
 }
 
-impl<const SIZE: usize> Tilemap<SIZE> {
-    pub fn new() -> Self {
-        let rooms: [[Room; SIZE]; SIZE] = randomize_rooms();
+impl From<Vec<Vec<usize>>> for Tilemap {
+    fn from(mut room_map: Vec<Vec<usize>>) -> Self {
+        let size: usize = room_map.len();
+        let mut rng = rand::thread_rng();
+        let spawn_room: [usize; 2] = [rng.gen_range(0..size), rng.gen_range(0..size)];
+        //let mut end_room: [usize; 2] = [rng.gen_range(0..size), rng.gen_range(0..size)];
+        //while end_room == spawn_room { end_room = [rng.gen_range(0..size), rng.gen_range(0..size)]; }
         let mut tilemap = Tilemap { 
-            tilemap: vec![vec![0; 64]; 64], 
-            spawn_room: [1, 1], 
-            spawn_coordinates: [0, 0] 
+            tilemap: vec![vec![0; size * 16]; size * 16], 
+            spawn_coordinates: [spawn_room[0] * 16 + 7, spawn_room[1] * 16 + 3] 
         };
-        for (i, row) in rooms.iter().enumerate() {
-            for (j, room) in row.iter().enumerate() {
-                let start_row = i * 16;
-                let start_col = j * 16;
-                for (ti, tile_row) in room.tilemap.iter().enumerate() {
-                    tilemap.tilemap[start_row + ti][start_col..start_col + 16].copy_from_slice(tile_row);
+        room_map[spawn_room[1]][spawn_room[0]] = 0;
+        for room_row in 0..size {
+            for room_column in 0..size {
+                let room: Room = Room::from(room_map[room_row][room_column]);
+                for tile_row in 0..16 {
+                    for tile_column in 0..16 {
+                        tilemap.tilemap[room_row * 16 + tile_row][room_column * 16 + tile_column] = room.tilemap[tile_row][tile_column];
+                    }
                 }
             }
         }
@@ -30,20 +32,32 @@ impl<const SIZE: usize> Tilemap<SIZE> {
     }
 }
 
-#[derive(Clone, Copy)]
+impl Tilemap {
+    pub fn get_as_string(&self) -> String {
+        let size: usize = self.tilemap.len();
+        let mut output: String = String::new();
+        for row in 0..size {
+            output += self.tilemap[size - row - 1].iter().map(|x| x.to_string() + ",").collect::<String>().as_str();
+            if output.len() > 0 { output.remove(output.len() - 1); }
+            if size - row > 1 { output.push('/'); }
+        }
+        output
+    }
+}
+
 pub struct Room {
-    pub tilemap: [[usize; 16]; 16],
+    tilemap: Vec<Vec<usize>>
 }
 
 impl Room {
     fn new() -> Self {
-        Room { tilemap: [[0; 16]; 16] }
+        Room { tilemap: vec![vec![0; 16]; 16] }
     }
 }
 
 impl From<usize> for Room {
     fn from(id: usize) -> Self {
-        let mut room = Room { tilemap: [[0; 16]; 16] };
+        let mut room = Room::new();
         let filename = format!("assets/levels/{}.tilemap", id);
         match read_to_string(&filename) {
             Ok(file_string) => {
@@ -65,15 +79,13 @@ impl From<usize> for Room {
     }
 }
 
-pub fn randomize_rooms<const SIZE: usize>() -> [[Room; SIZE]; SIZE] {
-    println!("Starting...");
+pub fn randomize_rooms(size: usize, stop: usize) -> Vec<Vec<usize>> {
     let mut rng = rand::thread_rng();
-    let mut array: [[Room; SIZE]; SIZE] = [[Room::new(); SIZE]; SIZE];
-    println!("Array initalized.");
-    for r in 0..SIZE {
-        for t in 0..SIZE {
-            let rand_room: usize = rng.gen_range(1..3);
+    let mut room_map: Vec<Vec<usize>> = vec![vec![0; size]; size];
+    for row in 0..size {
+        for column in 0..size {
+            room_map[row][column] = rng.gen_range(1..stop+1);
         }
     }
-    array
+    room_map
 }

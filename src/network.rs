@@ -6,6 +6,7 @@ use std::thread::{spawn, sleep, JoinHandle};
 use std::time::Duration;
 use get_if_addrs::{get_if_addrs, Interface};
 use crate::packet::{Packet, PlayerData};
+use crate::tilemap::Tilemap;
 
 #[derive(PartialEq)]
 pub enum Status {
@@ -20,7 +21,8 @@ pub enum Error {
 }
 
 struct Listener {
-    client: Option<(TcpStream, SocketAddr)>
+    client: Option<(TcpStream, SocketAddr)>,
+    initial_packet: Packet
 }
 
 struct Receiver {
@@ -56,9 +58,11 @@ pub struct Server {
 fn listen(listener: Arc<Mutex<Listener>>, tcp_listener: TcpListener) {
     loop {
         match tcp_listener.accept() {
-            Ok((stream, addr)) => {
+            Ok((mut stream, addr)) => {
                 println!("Listener accepted client: {addr}");
                 let mut listener = listener.lock().unwrap();
+                println!("Sending packet to client: {}", listener.initial_packet.packet);
+                let _ = stream.write_all(&listener.initial_packet.packet.as_bytes());
                 listener.client = Some((stream, addr));
             }
             Err(_) => {
@@ -66,7 +70,7 @@ fn listen(listener: Arc<Mutex<Listener>>, tcp_listener: TcpListener) {
                 listener.client = None;
             }
         } 
-        sleep(Duration::from_millis(1));    
+        sleep(Duration::from_millis(10));    
     }
 }
 
@@ -97,7 +101,7 @@ fn recv(receiver: Arc<Mutex<Receiver>>, mut stream: TcpStream) {
             }
         }
         buffer = [0; 512];
-        sleep(Duration::from_millis(1));
+        sleep(Duration::from_millis(10));
     }
 }
 
@@ -215,14 +219,15 @@ fn receive(client: Arc<Mutex<Client>>, receiver: Arc<Mutex<Receiver>>) {
                 client.player_data = Some(data.as_str().into());
             }
         }
-        sleep(Duration::from_millis(1));
+        sleep(Duration::from_millis(10));
     }
 }
 
 impl Server {
-    pub fn new() -> Result<Arc<Mutex<Server>>, Error> {
+    pub fn new(tilemap: Tilemap) -> Result<Arc<Mutex<Server>>, Error> {
         if let Ok(tcp_listener) = TcpListener::bind("0.0.0.0:50000") {
-            let listener = Arc::new(Mutex::new(Listener { client: None }));
+            let tilemap_packet: Packet = Packet::from(tilemap);
+            let listener = Arc::new(Mutex::new(Listener { client: None, initial_packet: tilemap_packet }));
             let accept_listener = Arc::clone(&listener);
             let listen_thread = spawn(move || {
                 listen(accept_listener, tcp_listener);
@@ -286,7 +291,7 @@ fn accept(server: Arc<Mutex<Server>>, listener: Arc<Mutex<Listener>>) {
                 break;
             }
         }        
-        sleep(Duration::from_millis(1));
+        sleep(Duration::from_millis(10));
     }
 }
 
@@ -319,6 +324,6 @@ fn send(server: Arc<Mutex<Server>>) {
                 server.clients.remove(index);
             }
         }
-        sleep(Duration::from_millis(1));
+        sleep(Duration::from_millis(10));
     }
 }

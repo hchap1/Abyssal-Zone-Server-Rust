@@ -1,3 +1,5 @@
+use crate::tilemap::Tilemap;
+
 #[derive(Clone)]
 pub struct PlayerData {
     x_position: f32,
@@ -10,7 +12,6 @@ pub struct PlayerData {
 
 impl From<&str> for PlayerData {
     fn from(data: &str) -> Self {
-        println!("DATA: {data}");
         let components: Vec<&str> = data.split('!').collect::<Vec<&str>>()[0].split(',').collect();
         if components.len() == 6 {
             if let (Ok(x), Ok(y), c, Ok(f), Ok(d), n) = (
@@ -52,5 +53,17 @@ impl From<&Vec<PlayerData>> for Packet {
             packet.packet.push_str(&string_data);
         }
         return packet;
+    }
+}
+
+impl From<Tilemap> for Packet {
+    fn from(tilemap: Tilemap) -> Self {
+        let mut packet: Packet = Packet { packet: String::from("<initial>") };
+        let string_data = format!("{},{}|{}!",
+            tilemap.spawn_coordinates[0], 
+            tilemap.spawn_coordinates[1],
+            tilemap.get_as_string());   
+        packet.packet += &string_data;
+        packet 
     }
 }

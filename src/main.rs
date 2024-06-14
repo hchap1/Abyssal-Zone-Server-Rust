@@ -3,12 +3,13 @@ mod packet;
 mod tilemap;
 
 use crate::network::Server;
-use crate::tilemap::{Tilemap, Room, randomize_rooms};
+use crate::tilemap::{Tilemap, randomize_rooms};
 use std::{thread, time::Duration};
 
-fn unused_main() {
+fn main() {
     let duration: Duration = Duration::from_millis(1000);
-    match Server::new() {
+    let tilemap: Tilemap = Tilemap::from(randomize_rooms(1, 3));
+    match Server::new(tilemap) {
         Ok(server) => {
             {
                 println!("JOINCODE: {}", server.lock().unwrap().get_joincode());
@@ -21,11 +22,4 @@ fn unused_main() {
             println!("ERROR: {:?}", e);
         }
     }
-}
-
-fn main() {
-    println!("Running program...");
-    const SIZE: usize = 16;
-    println!("SIZE = {SIZE}");
-    randomize_rooms::<SIZE>();
 }
