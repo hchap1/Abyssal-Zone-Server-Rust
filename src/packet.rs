@@ -2,12 +2,12 @@ use crate::tilemap::Tilemap;
 
 #[derive(Clone)]
 pub struct PlayerData {
-    x_position: f32,
-    y_position: f32,
+    pub x_position: f32,
+    pub y_position: f32,
     crouching: bool,
     frame: i8,
     direction: i8,
-    username: String
+    pub username: String
 }
 
 impl From<&str> for PlayerData {
@@ -34,9 +34,15 @@ pub struct Packet {
     pub packet: String
 }
 
+impl Packet {
+    pub fn from_enemy_and_player_data(enemy_packet: String, player_data: Vec<PlayerData>) -> Self {
+        Packet { packet: enemy_packet + &Packet::from(&player_data).packet }
+    }
+}
+
 impl From<&Vec<PlayerData>> for Packet {
     fn from(data: &Vec<PlayerData>) -> Packet{
-        let mut packet: Packet = Packet { packet: String::from("_|") };
+        let mut packet: Packet = Packet { packet: String::from("|") };
         for player_data in data {
             let mut c: char = '0';
             if player_data.crouching {

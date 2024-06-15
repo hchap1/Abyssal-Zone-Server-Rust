@@ -3,10 +3,11 @@ use std::io::prelude::*;
 use std::net::{SocketAddr, TcpListener, TcpStream};
 use std::sync::{Arc, Mutex};
 use std::thread::{spawn, sleep, JoinHandle};
-use std::time::Duration;
+use std::time::{Instant, Duration};
 use get_if_addrs::{get_if_addrs, Interface};
 use crate::packet::{Packet, PlayerData};
 use crate::tilemap::Tilemap;
+use crate::enemy::{Controller, get_enemy_packet};
 
 #[derive(PartialEq)]
 pub enum Status {
@@ -52,6 +53,9 @@ pub struct Server {
     _listen_thread: Option<JoinHandle<()>>,
     running: bool,
     join_code: Option<JoinCode>,
+    enemy_controller: Arc<Mutex<Controller>>,
+    controller_thread: Option<JoinHandle<()>>,
+    enemy_thread: Option<JoinHandle<()>>
 }
 
 
@@ -225,7 +229,10 @@ fn receive(client: Arc<Mutex<Client>>, receiver: Arc<Mutex<Receiver>>) {
 impl Server {
     pub fn new(tilemap: Tilemap) -> Result<Arc<Mutex<Server>>, Error> {
         if let Ok(tcp_listener) = TcpListener::bind("0.0.0.0:50000") {
-            let tilemap_packet: Packet = Packet::from(tilemap);
+            let tilemap_packet: Packet = Packet::from(tilemap.clone());
+            let controller = Arc::new(Mutex::new(Controller::new(vec![], tilemap.tilemap)));
+            let player_data_ref = Arc::clone(&controller);
+            let enemy_movement_ref = Arc::clone(&controller);
             let listener = Arc::new(Mutex::new(Listener { client: None, initial_packet: tilemap_packet }));
             let accept_listener = Arc::clone(&listener);
             let listen_thread = spawn(move || {
@@ -239,6 +246,9 @@ impl Server {
                 _listen_thread: Some(listen_thread),
                 running: true,
                 join_code: Some((&interfaces).into()),
+                enemy_controller: controller,
+                controller_thread: None,
+                enemy_thread: None
             };
             let server = Arc::new(Mutex::new(server));
 
@@ -250,13 +260,20 @@ impl Server {
             let distribute_thread = spawn(move || {
                 send(send_server);
             });
-
+            let controller_server = Arc::clone(&server);
+            let controller_thread = spawn(move || {
+                push_updates_to_enemies(controller_server, player_data_ref);
+            });
+            let enemy_thread = spawn(move || {
+                enemy_cycle(enemy_movement_ref);
+            });
             {
                 let mut server = server.lock().unwrap();
                 server.connection_thread = Some(connection_thread);
                 server.distribute_thread = Some(distribute_thread);
+                server.controller_thread = Some(controller_thread);
+                server.enemy_thread      = Some(enemy_thread);
             }
-
             Ok(server)
         } else {
             Err(Error::BindError)
@@ -306,7 +323,8 @@ fn send(server: Arc<Mutex<Server>>) {
                     active_player_data.push(player_data.clone());
                 }
             }
-            let packet: Packet = (&active_player_data).into();
+            let enemy_data: String = get_enemy_packet(&server.enemy_controller);
+            let packet: Packet = Packet::from_enemy_and_player_data(enemy_data, active_player_data);
             let mut to_remove: Vec<usize> = vec![];
             let mut count: usize = 0;
             for client in &server.clients {
@@ -324,5 +342,41 @@ fn send(server: Arc<Mutex<Server>>) {
             }
         }
         sleep(Duration::from_millis(10));
+    }
+}
+
+fn push_updates_to_enemies(server: Arc<Mutex<Server>>, controller: Arc<Mutex<Controller>>) {
+    loop {
+        let mut active_player_data: Vec<PlayerData> = vec![];
+        {
+            let server = server.lock().unwrap();
+            if !server.running { break; }
+            for client in &server.clients {
+                let client = client.lock().unwrap();
+                if let Some(player_data) = &client.player_data {
+                    active_player_data.push(player_data.clone());
+                }
+            }
+        }
+        {
+            let mut controller = controller.lock().unwrap();
+            controller.update_players(active_player_data);
+            controller.update_enemies();
+        }
+        sleep(Duration::from_millis(500));
+    }
+}
+
+fn enemy_cycle(controller: Arc<Mutex<Controller>>) {
+    let mut previous_time = Instant::now();
+    loop {
+        let current_time = Instant::now();
+        let deltatime: f32 = current_time.duration_since(previous_time).as_secs_f32();
+        previous_time = current_time;
+        {
+            let mut controller = controller.lock().unwrap();
+            controller.move_enemies(deltatime);
+        }
+        sleep(Duration::from_millis(16));
     }
 }

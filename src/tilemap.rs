@@ -1,6 +1,7 @@
 use std::fs::read_to_string;
 use rand::Rng;
 
+#[derive(Clone)]
 pub struct Tilemap {
     pub tilemap: Vec<Vec<usize>>,
     pub spawn_coordinates: [usize; 2],
@@ -23,7 +24,7 @@ impl From<Vec<Vec<usize>>> for Tilemap {
                 let room: Room = Room::from(room_map[room_row][room_column]);
                 for tile_row in 0..16 {
                     for tile_column in 0..16 {
-                        tilemap.tilemap[room_row * 16 + tile_row][room_column * 16 + tile_column] = room.tilemap[tile_row][tile_column];
+                        tilemap.tilemap[15 - (room_row * 16 + tile_row)][room_column * 16 + tile_column] = room.tilemap[tile_row][tile_column];
                     }
                 }
             }
@@ -37,9 +38,9 @@ impl Tilemap {
         let size: usize = self.tilemap.len();
         let mut output: String = String::new();
         for row in 0..size {
-            output += self.tilemap[size - row - 1].iter().map(|x| x.to_string() + ",").collect::<String>().as_str();
+            output += self.tilemap[row].iter().map(|x| x.to_string() + ",").collect::<String>().as_str();
             if output.len() > 0 { output.remove(output.len() - 1); }
-            if size - row > 1 { output.push('/'); }
+            if row < size - 1 { output.push('/'); }
         }
         output
     }
