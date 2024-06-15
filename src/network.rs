@@ -61,7 +61,6 @@ fn listen(listener: Arc<Mutex<Listener>>, tcp_listener: TcpListener) {
             Ok((mut stream, addr)) => {
                 println!("Listener accepted client: {addr}");
                 let mut listener = listener.lock().unwrap();
-                println!("Sending packet to client: {}", listener.initial_packet.packet);
                 let _ = stream.write_all(&listener.initial_packet.packet.as_bytes());
                 listener.client = Some((stream, addr));
             }
