@@ -1,10 +1,12 @@
 use std::fs::read_to_string;
 use rand::Rng;
+use crate::astar::{is_solid, Position, astar, Ai};
 
 #[derive(Clone)]
 pub struct Tilemap {
     pub tilemap: Vec<Vec<usize>>,
     pub spawn_coordinates: [usize; 2],
+    pub spawn_locations: Vec<[usize; 2]>
 }
 
 impl From<Vec<Vec<usize>>> for Tilemap {
@@ -12,22 +14,45 @@ impl From<Vec<Vec<usize>>> for Tilemap {
         let size: usize = room_map.len();
         let mut rng = rand::thread_rng();
         let spawn_room: [usize; 2] = [rng.gen_range(0..size), rng.gen_range(0..size)];
-        //let mut end_room: [usize; 2] = [rng.gen_range(0..size), rng.gen_range(0..size)];
-        //while end_room == spawn_room { end_room = [rng.gen_range(0..size), rng.gen_range(0..size)]; }
         let mut tilemap = Tilemap { 
             tilemap: vec![vec![0; size * 16]; size * 16], 
-            spawn_coordinates: [spawn_room[0] * 16 + 7, (size - spawn_room[1] - 1) * 16 + 3] 
+            spawn_coordinates: [spawn_room[0] * 16 + 9, (size - spawn_room[1] - 1) * 16 + 2],
+            spawn_locations: vec![]
         };
         room_map[spawn_room[1]][spawn_room[0]] = 0;
         for room_row in 0..size {
             for room_column in 0..size {
                 let room: Room = Room::from(room_map[room_row][room_column]);
+                let mut spawn_found: bool = false;
+                let mut spawn_location: [usize; 2] = [0; 2];
+                let mut count: usize = 0;
+                while !spawn_found && count < 20 {
+                    spawn_location = [8, 6];//[rng.gen_range(0..16), rng.gen_range(0..16)];
+                    count += 1;
+                    if !is_solid(room.tilemap[spawn_location[1]][spawn_location[0]]) {
+                        spawn_found = true;
+                    }
+                }
+                tilemap.spawn_locations.push([spawn_location[0] + room_column * 16, spawn_location[1] + room_row * 16]);
                 for tile_row in 0..16 {
                     for tile_column in 0..16 {
-                        tilemap.tilemap[15 - (room_row * 16 + tile_row)][room_column * 16 + tile_column] = room.tilemap[tile_row][tile_column];
+                        tilemap.tilemap[16 * size - (room_row * 16 + tile_row) - 1][room_column * 16 + tile_column] = room.tilemap[tile_row][tile_column];
                     }
                 }
             }
+        }
+        let mut to_remove: Vec<usize> = vec![];
+        for (index, spawn_location) in tilemap.spawn_locations.iter().enumerate() {
+            let path: Option<Vec<Position>> = astar(&tilemap.tilemap, Position::from(*spawn_location), Position::from(tilemap.spawn_coordinates), &Ai::Spider);
+            if path == None {
+                to_remove.push(index);
+            }
+        }
+        to_remove.sort();
+        let mut count: usize = 0;
+        for index in to_remove {
+            tilemap.spawn_locations.remove(index - count);
+            count += 1;
         }
         tilemap
     }

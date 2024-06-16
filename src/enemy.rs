@@ -1,6 +1,8 @@
 use crate::astar::{astar, Ai, Position};
 use crate::packet::PlayerData;
 use std::sync::{Arc, Mutex};
+use rand::Rng;
+use rand::{thread_rng, rngs::ThreadRng};
 
 pub struct Enemy {
     name: String,
@@ -38,23 +40,19 @@ impl Enemy {
 pub struct Controller {
     enemies: Vec<Enemy>,
     players: Vec<PlayerData>,
-    tilemap: Vec<Vec<usize>>
+    tilemap: Vec<Vec<usize>>,
+    spawn_locations: Vec<[usize; 2]>
 }
 
 impl Controller {
-    pub fn new(players: Vec<PlayerData>, tilemap: Vec<Vec<usize>>) -> Self {
-        let test_spider: Enemy = Enemy { 
-            name: String::from("Spider"), ai: Ai::Spider, speed: 2.0f32, x: 12.0f32, y: 5.0f32, path_index: 2, path: None 
-        };
-        let test_ground: Enemy = Enemy { 
-            name: String::from("Ground"), ai: Ai::Ground, speed: 4.0f32, x: 12.0f32, y: 5.0f32, path_index: 2, path: None 
-        };
-        Controller { enemies: vec![test_spider, test_ground], players: players, tilemap: tilemap }
+    pub fn new(players: Vec<PlayerData>, tilemap: Vec<Vec<usize>>, spawn_locations: Vec<[usize; 2]>) -> Self {
+        Controller { enemies: vec![], players: players, tilemap: tilemap, spawn_locations: spawn_locations }
     }
     pub fn update_players(&mut self, players: Vec<PlayerData>) {
         self.players = players;
     }
     pub fn update_enemies(&mut self) {
+        let mut rng: ThreadRng = thread_rng();
         if self.enemies.len() > 0 {
             for i in 0..self.enemies.len() {
                 let start: Position = Position::new(self.enemies[i].x.round() as usize, (self.enemies[i].y + 0.5).round() as usize);
@@ -75,11 +73,50 @@ impl Controller {
                     }
                     else if self.enemies[i].path_index >= self.enemies[i].path.clone().unwrap().len() {
                         self.enemies[i].path = astar(&self.tilemap, start, end, &self.enemies[i].ai);
-                        self.enemies[i].path_index = 1;
+                        self.enemies[i].path_index = 1; 
                     }
                 }
             }
         }
+        if self.enemies.len() < 5 {
+            let frame_probability: f64 = 5.0f64 * 0.016f64; // deltatime
+            let random_value: f64 = rng.gen();
+            let result: bool = random_value < frame_probability;
+            if result || true {
+                if self.spawn_locations.len() > 0 {
+                    let mut location: Option<[usize; 2]> = None;
+                    for _ in 0..10 {
+                        let index: usize = rng.gen_range(0..self.spawn_locations.len());
+                        if index < self.spawn_locations.len() {
+                            let spawn_location: [usize; 2] = self.spawn_locations[index];
+                            let mut valid: bool = true;
+                            for player in &self.players {
+                                let distance: f32 = ((player.x_position - spawn_location[0] as f32).powf(2.0f32) + (player.y_position - spawn_location[1] as f32).powf(2.0f32)).sqrt();
+                                if distance <= 10.0f32 {
+                                    valid = false;
+                                }
+                            }
+                            if valid {
+                                location = Some(spawn_location);
+                                break;
+                            }
+                        }
+                    }
+                    if let Some(location) = location {
+                        self.enemies.push(Enemy { 
+                            name: String::from("Spider"), 
+                            ai: Ai::Spider,
+                            speed: 4.0f32,
+                            x: location[0] as f32,
+                            y: location[1] as f32,
+                            path_index: 1,
+                            path: None
+                        })
+                    }
+                }
+            }
+        }
+        println!("DONE UPDATING ENEMIES.");
     }
     pub fn move_enemies(&mut self, deltatime: f32) {
         for enemy in self.enemies.iter_mut() {

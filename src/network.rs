@@ -230,7 +230,7 @@ impl Server {
     pub fn new(tilemap: Tilemap) -> Result<Arc<Mutex<Server>>, Error> {
         if let Ok(tcp_listener) = TcpListener::bind("0.0.0.0:50000") {
             let tilemap_packet: Packet = Packet::from(tilemap.clone());
-            let controller = Arc::new(Mutex::new(Controller::new(vec![], tilemap.tilemap)));
+            let controller = Arc::new(Mutex::new(Controller::new(vec![], tilemap.tilemap, tilemap.spawn_locations)));
             let player_data_ref = Arc::clone(&controller);
             let enemy_movement_ref = Arc::clone(&controller);
             let listener = Arc::new(Mutex::new(Listener { client: None, initial_packet: tilemap_packet }));
