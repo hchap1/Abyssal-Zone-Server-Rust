@@ -82,7 +82,7 @@ impl Controller {
             let frame_probability: f64 = 5.0f64 * 0.016f64; // deltatime
             let random_value: f64 = rng.gen();
             let result: bool = random_value < frame_probability;
-            if result || true {
+            if result && false {
                 if self.spawn_locations.len() > 0 {
                     let mut location: Option<[usize; 2]> = None;
                     for _ in 0..10 {
@@ -116,7 +116,6 @@ impl Controller {
                 }
             }
         }
-        println!("DONE UPDATING ENEMIES.");
     }
     pub fn move_enemies(&mut self, deltatime: f32) {
         for enemy in self.enemies.iter_mut() {

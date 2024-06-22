@@ -5,7 +5,7 @@ use std::sync::{Arc, Mutex};
 use std::thread::{spawn, sleep, JoinHandle};
 use std::time::{Instant, Duration};
 use get_if_addrs::{get_if_addrs, Interface};
-use crate::packet::{Packet, PlayerData};
+use crate::packet::{Packet, PlayerData, tilemap_packet};
 use crate::tilemap::Tilemap;
 use crate::enemy::{Controller, get_enemy_packet};
 
@@ -23,12 +23,12 @@ pub enum Error {
 
 struct Listener {
     client: Option<(TcpStream, SocketAddr)>,
-    initial_packet: Packet
+    initial_packet: Vec<String>
 }
 
 struct Receiver {
     incoming: Vec<String>,
-    outgoing: Option<String>,
+    outgoing: Vec<String>,
     status: Status
 }
 
@@ -42,7 +42,8 @@ pub struct Client {
     socket_thread: Option<JoinHandle<()>>,
     _addr: String,
     _running: bool,
-    outgoing: Option<String>,
+    incoming: Vec<String>,
+    outgoing: Vec<String>,
     status: Status
 }
 
@@ -65,7 +66,10 @@ fn listen(listener: Arc<Mutex<Listener>>, tcp_listener: TcpListener) {
             Ok((mut stream, addr)) => {
                 println!("Listener accepted client: {addr}");
                 let mut listener = listener.lock().unwrap();
-                let _ = stream.write_all(&listener.initial_packet.packet.as_bytes());
+                for packet in &listener.initial_packet {
+                    let _ = stream.write_all(packet.as_bytes());
+                    sleep(Duration::from_millis(10));
+                }
                 listener.client = Some((stream, addr));
             }
             Err(_) => {
@@ -89,10 +93,12 @@ fn recv(receiver: Arc<Mutex<Receiver>>, mut stream: TcpStream) {
                 Ok(data) => {
                     let mut receiver = receiver.lock().unwrap();
                     receiver.incoming.push(data.to_string());
-                    if let Some(message) = replace(&mut receiver.outgoing, None) {
+                    for message in &receiver.outgoing {
+                        println!("Sending: {message}");
                         let bytes_written: &[u8] = message.as_bytes();
                         let _ = stream.write_all(bytes_written);
                     }
+                    sleep(Duration::from_millis(2));
                 }
                 Err(e) => {
                     println!("Error: {e}");
@@ -173,7 +179,7 @@ impl From<&String> for JoinCode {
 
 impl Client {
     pub fn new(stream: TcpStream, addr: SocketAddr) -> Arc<Mutex<Client>> {
-        let receiver: Arc<Mutex<Receiver>> = Arc::new(Mutex::new(Receiver { incoming: vec![], outgoing: None, status: Status::Running }));
+        let receiver: Arc<Mutex<Receiver>> = Arc::new(Mutex::new(Receiver { incoming: vec![], outgoing: vec![], status: Status::Running }));
         let recv_receiver = Arc::clone(&receiver);
         let _recv_thread = spawn(move || {
             recv(receiver, stream);
@@ -183,7 +189,8 @@ impl Client {
             socket_thread: None,
             _addr: addr.to_string(),
             _running: true,
-            outgoing: None,
+            incoming: vec![],
+            outgoing: vec![],
             status: Status::Running
         };
         let client = Arc::new(Mutex::new(client));
@@ -199,7 +206,7 @@ impl Client {
     }
 
     pub fn send(&mut self, message: String) {
-        self.outgoing = Some(message);
+        self.outgoing.push(message);
     }
 }
 
@@ -207,20 +214,21 @@ fn receive(client: Arc<Mutex<Client>>, receiver: Arc<Mutex<Receiver>>) {
     loop {
         {
             let mut client = client.lock().unwrap();
-            let incoming = {
+            let mut incoming = {
                 let mut receiver = receiver.lock().unwrap();
                 if receiver.status != Status::Running {
                     client.status = Status::Disconnected;
                 }
-                if let Some(_) = &client.outgoing {
-                    receiver.outgoing = replace(&mut client.outgoing, None);
+                if client.outgoing.len() > 0 {
+                    receiver.outgoing = replace(&mut client.outgoing, vec![]);
                 }
                 replace(&mut receiver.incoming, vec![])
             };
             // Only look at most recent message.
-            if let Some(data) = incoming.last() {
-                client.player_data = Some(data.as_str().into());
+            if let Some(_) = client.player_data {
+                client.player_data.as_mut().unwrap().parse_updates(&incoming);
             }
+            client.incoming = replace(&mut incoming, vec![]);
         }
         sleep(Duration::from_millis(10));
     }
@@ -229,11 +237,11 @@ fn receive(client: Arc<Mutex<Client>>, receiver: Arc<Mutex<Receiver>>) {
 impl Server {
     pub fn new(tilemap: Tilemap) -> Result<Arc<Mutex<Server>>, Error> {
         if let Ok(tcp_listener) = TcpListener::bind("0.0.0.0:50000") {
-            let tilemap_packet: Packet = Packet::from(tilemap.clone());
+            let tilemap_packets: Vec<String> = tilemap_packet(tilemap.clone());
             let controller = Arc::new(Mutex::new(Controller::new(vec![], tilemap.tilemap, tilemap.spawn_locations)));
             let player_data_ref = Arc::clone(&controller);
             let enemy_movement_ref = Arc::clone(&controller);
-            let listener = Arc::new(Mutex::new(Listener { client: None, initial_packet: tilemap_packet }));
+            let listener = Arc::new(Mutex::new(Listener { client: None, initial_packet: tilemap_packets }));
             let accept_listener = Arc::clone(&listener);
             let listen_thread = spawn(move || {
                 listen(accept_listener, tcp_listener);
@@ -313,23 +321,30 @@ fn accept(server: Arc<Mutex<Server>>, listener: Arc<Mutex<Listener>>) {
 
 fn send(server: Arc<Mutex<Server>>) {
     loop {
-        let mut active_player_data: Vec<PlayerData> = vec![];
+        let mut packets: Vec<String> = vec![];
         {
             let mut server = server.lock().unwrap();
             if !server.running { break; }
             for client in &server.clients {
-                let client = client.lock().unwrap();
-                if let Some(player_data) = &client.player_data {
-                    active_player_data.push(player_data.clone());
+                let mut client = client.lock().unwrap();
+                for packet in client.incoming.iter_mut() {
+                    packets.push(replace(packet, String::new()));
                 }
+                let _ = replace(&mut client.incoming, vec![]);
             }
-            let enemy_data: String = get_enemy_packet(&server.enemy_controller);
-            let packet: Packet = Packet::from_enemy_and_player_data(enemy_data, active_player_data);
             let mut to_remove: Vec<usize> = vec![];
             let mut count: usize = 0;
+
+            for packet in &packets {
+                for client in &server.clients {
+                    let mut c = client.lock().unwrap();
+                    c.send(packet.clone());
+                    sleep(Duration::from_millis(2));
+                }
+            }
+
             for client in &server.clients {
-                let mut c = client.lock().unwrap();
-                c.send(packet.packet.clone());
+                let c = client.lock().unwrap();
                 if c.status != Status::Running {
                     to_remove.push(count);
                 }

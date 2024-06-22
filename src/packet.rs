@@ -30,6 +30,35 @@ impl From<&str> for PlayerData {
     }
 }
 
+impl PlayerData {
+    pub fn parse_updates(&mut self, packets: &Vec<String>) {
+        for packet in packets {
+            let components: Vec<String> = packet.split('!').map(|x| String::from(x)).collect::<Vec<String>>()[0].split('>').map(|x| String::from(x)).collect();
+            let identifier: &String = &components[0];
+            let data: Vec<String> = components[1].split(',').map(|x| String::from(x)).collect::<Vec<String>>();
+            if identifier == "pp" {
+                if let (Ok(x), Ok(y)) = (data[1].parse::<f32>(), data[2].parse::<f32>()) {
+                    self.x_position = x;
+                    self.y_position = y;
+                }
+            }
+            if identifier == "pf" {
+                if let Ok(frame) = data[1].parse::<i8>() {
+                    self.frame = frame;
+                }
+            }
+            if identifier == "pd" {
+                if let Ok(direction) = data[1].parse::<i8>() {
+                    self.direction = direction;
+                }
+            }
+            if identifier == "pc" {
+                self.crouching = data[1] == "1";
+            }
+        }
+    }
+}
+
 pub struct Packet {
     pub packet: String
 }
@@ -62,14 +91,24 @@ impl From<&Vec<PlayerData>> for Packet {
     }
 }
 
-impl From<Tilemap> for Packet {
-    fn from(tilemap: Tilemap) -> Self {
-        let mut packet: Packet = Packet { packet: String::from("<initial>") };
-        let string_data = format!("{},{}|{}!",
-            tilemap.spawn_coordinates[0], 
-            tilemap.spawn_coordinates[1],
-            tilemap.get_as_string());   
-        packet.packet += &string_data;
-        packet 
+pub fn tilemap_packet(tilemap: Tilemap) -> Vec<String> {
+    let mut transmissions: Vec<String> = vec![
+            String::from("tilemap_info>1!"),
+            format!("sp>{},{}!", tilemap.spawn_coordinates[0], tilemap.spawn_coordinates[1])
+        ];
+    for row in &tilemap.tilemap {
+        let mut delim: String = String::new();
+        for item in row {
+            delim += &item.to_string();
+            delim.push(',');
+        }
+        let mut temp: Vec<char> = delim.chars().collect();
+        if let Some(last) = temp.last_mut() {
+            *last = '!';
+        }
+        delim = temp.into_iter().collect();
+        transmissions.push(format!("tmr>{delim}"));
     }
+    transmissions.push(String::from("tilemap_info>0!"));
+    transmissions
 }

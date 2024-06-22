@@ -57,20 +57,6 @@ impl From<Vec<Vec<usize>>> for Tilemap {
         tilemap
     }
 }
-
-impl Tilemap {
-    pub fn get_as_string(&self) -> String {
-        let size: usize = self.tilemap.len();
-        let mut output: String = String::new();
-        for row in 0..size {
-            output += self.tilemap[row].iter().map(|x| x.to_string() + ",").collect::<String>().as_str();
-            if output.len() > 0 { output.remove(output.len() - 1); }
-            if row < size - 1 { output.push('/'); }
-        }
-        output
-    }
-}
-
 pub struct Room {
     tilemap: Vec<Vec<usize>>
 }
