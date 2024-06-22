@@ -34,7 +34,8 @@ impl PlayerData {
     pub fn parse_updates(&mut self, packets: &Vec<String>) {
         for packet in packets {
             let components: Vec<String> = packet.split('!').map(|x| String::from(x)).collect::<Vec<String>>()[0].split('>').map(|x| String::from(x)).collect();
-            let identifier: &String = &components[0];
+            let mut identifier: String = components[0].clone();
+            identifier.remove(0);
             let data: Vec<String> = components[1].split(',').map(|x| String::from(x)).collect::<Vec<String>>();
             if identifier == "pp" {
                 if let (Ok(x), Ok(y)) = (data[1].parse::<f32>(), data[2].parse::<f32>()) {
@@ -93,8 +94,8 @@ impl From<&Vec<PlayerData>> for Packet {
 
 pub fn tilemap_packet(tilemap: Tilemap) -> Vec<String> {
     let mut transmissions: Vec<String> = vec![
-            String::from("tilemap_info>1!"),
-            format!("sp>{},{}!", tilemap.spawn_coordinates[0], tilemap.spawn_coordinates[1])
+            String::from("<tilemap_info>1!"),
+            format!("<sp>{},{}!", tilemap.spawn_coordinates[0], tilemap.spawn_coordinates[1])
         ];
     for row in &tilemap.tilemap {
         let mut delim: String = String::new();
@@ -107,8 +108,8 @@ pub fn tilemap_packet(tilemap: Tilemap) -> Vec<String> {
             *last = '!';
         }
         delim = temp.into_iter().collect();
-        transmissions.push(format!("tmr>{delim}"));
+        transmissions.push(format!("<tmr>{delim}"));
     }
-    transmissions.push(String::from("tilemap_info>0!"));
+    transmissions.push(String::from("<tilemap_info>0!"));
     transmissions
 }

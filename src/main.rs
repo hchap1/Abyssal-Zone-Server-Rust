@@ -3,10 +3,12 @@ mod packet;
 mod tilemap;
 mod astar;
 mod enemy;
+mod util;
 
 use crate::network::Server;
 use crate::tilemap::{Tilemap, randomize_rooms};
 use std::{thread, time::Duration};
+use crate::util::split_with_delimiter;
 
 fn main() {
     let duration: Duration = Duration::from_millis(1000);

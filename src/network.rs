@@ -8,6 +8,7 @@ use get_if_addrs::{get_if_addrs, Interface};
 use crate::packet::{Packet, PlayerData, tilemap_packet};
 use crate::tilemap::Tilemap;
 use crate::enemy::{Controller, get_enemy_packet};
+use crate::util::split_with_delimiter;
 
 #[derive(PartialEq)]
 pub enum Status {
@@ -27,6 +28,7 @@ struct Listener {
 }
 
 struct Receiver {
+    username: String,
     incoming: Vec<String>,
     outgoing: Vec<String>,
     status: Status
@@ -40,11 +42,13 @@ pub struct JoinCode {
 pub struct Client {
     player_data: Option<PlayerData>,
     socket_thread: Option<JoinHandle<()>>,
+    send_thread: Option<JoinHandle<()>>,
     _addr: String,
     _running: bool,
     incoming: Vec<String>,
     outgoing: Vec<String>,
-    status: Status
+    status: Status,
+    num: isize
 }
 
 pub struct Server {
@@ -68,7 +72,7 @@ fn listen(listener: Arc<Mutex<Listener>>, tcp_listener: TcpListener) {
                 let mut listener = listener.lock().unwrap();
                 for packet in &listener.initial_packet {
                     let _ = stream.write_all(packet.as_bytes());
-                    sleep(Duration::from_millis(10));
+                    sleep(Duration::from_millis(2));
                 }
                 listener.client = Some((stream, addr));
             }
@@ -92,13 +96,10 @@ fn recv(receiver: Arc<Mutex<Receiver>>, mut stream: TcpStream) {
             Ok(_) => match std::str::from_utf8(&buffer) {
                 Ok(data) => {
                     let mut receiver = receiver.lock().unwrap();
-                    receiver.incoming.push(data.to_string());
-                    for message in &receiver.outgoing {
-                        println!("Sending: {message}");
-                        let bytes_written: &[u8] = message.as_bytes();
-                        let _ = stream.write_all(bytes_written);
-                    }
-                    sleep(Duration::from_millis(2));
+                    let message: String = data.to_string();
+                    let mut packets: Vec<String> = split_with_delimiter(message, "!");
+                    println!("Received packets: {:?}", packets);
+                    receiver.incoming.append(&mut packets);
                 }
                 Err(e) => {
                     println!("Error: {e}");
@@ -111,6 +112,19 @@ fn recv(receiver: Arc<Mutex<Receiver>>, mut stream: TcpStream) {
         }
         buffer = [0; 512];
         sleep(Duration::from_millis(10));
+    }
+}
+
+fn distribute_receiver_outgoing(receiver: Arc<Mutex<Receiver>>, mut stream: TcpStream) {
+    loop {
+        {
+            let mut receiver = receiver.lock().unwrap();
+            for message in &receiver.outgoing {
+                let bytes_written: &[u8] = message.as_bytes();
+                let _ = stream.write_all(bytes_written);
+            }
+            receiver.outgoing = vec![];
+        }
     }
 }
 
@@ -178,35 +192,53 @@ impl From<&String> for JoinCode {
 }
 
 impl Client {
-    pub fn new(stream: TcpStream, addr: SocketAddr) -> Arc<Mutex<Client>> {
-        let receiver: Arc<Mutex<Receiver>> = Arc::new(Mutex::new(Receiver { incoming: vec![], outgoing: vec![], status: Status::Running }));
+    pub fn new(stream: TcpStream, addr: SocketAddr, active_players: Vec<String>, active_enemies: Vec<String>, num: isize) -> Arc<Mutex<Client>> {
+        let mut outgoing: Vec<String> = vec![];
+        for player in &active_players {
+            outgoing.push(format!("pcon>{player}"));
+        } 
+        let receiver: Arc<Mutex<Receiver>> = Arc::new(Mutex::new(Receiver { username: num.to_string(), incoming: vec![], outgoing: outgoing, status: Status::Running }));
         let recv_receiver = Arc::clone(&receiver);
+        let recv_stream = stream.try_clone().unwrap();
+        let send_receiver = Arc::clone(&receiver);
         let _recv_thread = spawn(move || {
             recv(receiver, stream);
         });
         let client = Client {
             player_data: None,
             socket_thread: None,
+            send_thread: None,
             _addr: addr.to_string(),
             _running: true,
             incoming: vec![],
             outgoing: vec![],
-            status: Status::Running
+            status: Status::Running,
+            num: num
         };
         let client = Arc::new(Mutex::new(client));
         let client_clone = Arc::clone(&client);
         let socket_thread = spawn(move || {
             receive(client_clone, recv_receiver)
         });
+        let send_thread = spawn(move || {
+            distribute_receiver_outgoing(send_receiver, recv_stream)
+        });
         {
             let mut client = client.lock().unwrap();
             client.socket_thread = Some(socket_thread);
+            client.send_thread = Some(send_thread);
         }
         return client;
     }
 
     pub fn send(&mut self, message: String) {
         self.outgoing.push(message);
+    }
+
+    pub fn send_all(&mut self, messages: &Vec<String>) {
+        for m in messages {
+            self.outgoing.push(m.clone());
+        }
     }
 }
 
@@ -220,15 +252,15 @@ fn receive(client: Arc<Mutex<Client>>, receiver: Arc<Mutex<Receiver>>) {
                     client.status = Status::Disconnected;
                 }
                 if client.outgoing.len() > 0 {
-                    receiver.outgoing = replace(&mut client.outgoing, vec![]);
+                    let mut messages: Vec<String> = replace(&mut client.outgoing, vec![]);
+                    receiver.outgoing.append(&mut messages);
                 }
                 replace(&mut receiver.incoming, vec![])
             };
-            // Only look at most recent message.
             if let Some(_) = client.player_data {
                 client.player_data.as_mut().unwrap().parse_updates(&incoming);
             }
-            client.incoming = replace(&mut incoming, vec![]);
+            client.incoming.append(&mut incoming);
         }
         sleep(Duration::from_millis(10));
     }
@@ -297,6 +329,7 @@ impl Server {
 }
 
 fn accept(server: Arc<Mutex<Server>>, listener: Arc<Mutex<Listener>>) {
+    let mut count: isize = 0;
     loop {
         {
             let mut server = server.lock().unwrap();
@@ -304,11 +337,18 @@ fn accept(server: Arc<Mutex<Server>>, listener: Arc<Mutex<Listener>>) {
                 let mut listener = listener.lock().unwrap();
                 replace(&mut listener.client, None)
             };
-        
+            let mut active_players: Vec<String> = vec![];
+            for client in server.clients.iter() {
+                let c = client.lock().unwrap();
+                if let Some(pd) = &c.player_data {
+                    active_players.push(pd.username.clone());
+                }
+            }
             if let Some((client, addr)) = client_option {
-                let c: Arc<Mutex<Client>> = Client::new(client, addr);
+                let c: Arc<Mutex<Client>> = Client::new(client, addr, active_players, vec![], count);
                 println!("Server polled client: {addr}");
                 server.clients.push(c);
+                count += 1;
             }
         
             if !server.running {
@@ -327,20 +367,15 @@ fn send(server: Arc<Mutex<Server>>) {
             if !server.running { break; }
             for client in &server.clients {
                 let mut client = client.lock().unwrap();
-                for packet in client.incoming.iter_mut() {
-                    packets.push(replace(packet, String::new()));
-                }
+                packets.append(&mut client.incoming);
                 let _ = replace(&mut client.incoming, vec![]);
             }
             let mut to_remove: Vec<usize> = vec![];
             let mut count: usize = 0;
 
-            for packet in &packets {
-                for client in &server.clients {
-                    let mut c = client.lock().unwrap();
-                    c.send(packet.clone());
-                    sleep(Duration::from_millis(2));
-                }
+            for client in &server.clients {
+                let mut c = client.lock().unwrap();
+                c.send_all(&packets);
             }
 
             for client in &server.clients {
