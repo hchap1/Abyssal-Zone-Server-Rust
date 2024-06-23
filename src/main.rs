@@ -12,11 +12,11 @@ use std::{thread, time::Duration};
 fn main() {
     let duration: Duration = Duration::from_millis(1000);
     println!("Beginning...");
-    let tilemap: Tilemap = Tilemap::from(randomize_rooms(2, 4));
+    let tilemap: Tilemap = Tilemap::from(randomize_rooms(1 , 6));
     match Server::new(tilemap) {
         Ok(server) => {
             {
-                println!("JOINCODE: {}", server.lock().unwrap().get_joincode());
+                println!("LAN JOINCODE: {}", server.lock().unwrap().get_joincode());
             }
             loop {
                 thread::sleep(duration);

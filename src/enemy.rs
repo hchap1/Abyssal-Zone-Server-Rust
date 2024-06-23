@@ -1,22 +1,27 @@
-use crate::astar::{astar, Ai, Position};
+use crate::astar::{astar, Ai, Behaviour, Position};
 use crate::packet::PlayerData;
 use rand::Rng;
+use std::time::{Instant, Duration};
 use rand::{thread_rng, rngs::ThreadRng};
+use crate::astar::is_solid;
 
 pub struct Enemy {
     name: String,
     ai: Ai,
+    behaviour: Behaviour,
     speed: f32,
     x: f32,
     y: f32,
     old_x: f32,
     old_y: f32,
     path_index: usize,
-    path: Option<Vec<Position>>
+    path: Option<Vec<Position>>,
+    last_hit: Instant
 }
 
 impl Enemy {
-    fn movement(&mut self, deltatime: f32) -> Option<String> {
+    fn movement(&mut self, deltatime: f32, players: &Vec<PlayerData>) -> Vec<String> {
+        let mut packets: Vec<String> = vec![];
         if let Some(path) = &self.path {
             if self.path_index < path.len() {
                 let target_position: &Position = &path[self.path_index];
@@ -27,17 +32,42 @@ impl Enemy {
                 else {
                     dx = (dx / mag) * self.speed * deltatime;
                     dy = (dy / mag) * self.speed * deltatime;
+                    if self.ai == Ai::Ground {
+                        if dy > 0.0f32 {
+                            dy *= 0.3f32;
+                        }
+                        else {
+                            dy *= 1.3f32;
+                        }
+                    }
                     self.x += dx;
                     self.y += dy;
                 }
                 if self.old_x != self.x || self.old_y != self.y {
-                    return Some(format!("<ep>{},{},{}!", self.name, self.x, self.y));
+                    packets.push(format!("<ep>{},{},{}!", self.name, self.x, self.y));
                 }
                 self.old_x = self.x;
                 self.old_y = self.y;
             }
         }
-        return None;
+        if self.old_x == 0.0f32 && self.old_y == 0.0f32 {
+            self.old_x = self.x;
+            self.old_y = self.y;
+            packets.push(format!("<ep>{},{},{}!", self.name, self.x, self.y));
+        }
+        if Instant::now().duration_since(self.last_hit) > Duration::from_millis(500) {
+            for player in players {
+                let distance: f32 = ((self.x - player.x_position).powf(2.0f32) + (self.y - player.y_position).powf(2.0f32)).sqrt();
+                if distance < 0.5f32 {
+                    let packet: String = format!("<ph>{},{}!", player.username, -20);
+                    packets.push(packet);
+                    self.last_hit = Instant::now();
+                    self.path_index += 999;
+                    break;
+                }
+            }
+        }
+        return packets;
     }
 }
 
@@ -57,7 +87,7 @@ impl Controller {
     pub fn update_players(&mut self, players: Vec<PlayerData>) {
         self.players = players;
     }
-    pub fn update_enemies(&mut self) {
+    pub fn update_enemies(&mut self) -> Option<String> {
         let mut rng: ThreadRng = thread_rng();
         if self.enemies.len() > 0 {
             for i in 0..self.enemies.len() {
@@ -70,6 +100,21 @@ impl Controller {
                         min_dist = distance;
                         closest_player_index = index;
                     }
+                }
+                if closest_player_index != 999 && self.enemies[i].behaviour == Behaviour::AttackSingle {
+                    let px: f32 = self.players[closest_player_index].x_position;
+                    let py: f32 = self.players[closest_player_index].y_position;
+                    let name: String = self.players[closest_player_index].username.clone();
+                    for player in &self.players {
+                        if player.username != name {
+                            let dist: f32 = ((px - player.x_position).powf(2.0f32) + (py - player.y_position).powf(2.0f32)).sqrt();
+                            if dist <= 5.0f32 {
+                                closest_player_index = 999;
+                                break;
+                            }
+                        }
+                    }
+
                 }
                 if closest_player_index != 999 {
                     let end: Position = Position::new(self.players[closest_player_index].x_position.round() as usize, self.players[closest_player_index].y_position.round() as usize);
@@ -84,14 +129,13 @@ impl Controller {
                 }
             }
         }
-        if self.enemies.len() < 10 {
+        if self.enemies.len() < 40 {
             let frame_probability: f64 = 5.0f64 * 0.02f64; // deltatime
             let random_value: f64 = rng.gen();
             let result: bool = random_value < frame_probability;
             if result {
                 if self.spawn_locations.len() > 0 {
                     self.id_count += 1;
-                    self.packets.push(format!("<ne>{}!", self.id_count));
                     let mut location: Option<[usize; 2]> = None;
                     for _ in 0..10 {
                         let index: usize = rng.gen_range(0..self.spawn_locations.len());
@@ -104,6 +148,7 @@ impl Controller {
                                     valid = false;
                                 }
                             }
+                            valid = true;
                             if valid {
                                 location = Some(spawn_location);
                                 break;
@@ -111,27 +156,48 @@ impl Controller {
                         }
                     }
                     if let Some(location) = location {
-                        self.enemies.push(Enemy { 
-                            name: self.id_count.to_string(), 
-                            ai: Ai::Spider,
-                            speed: 1.0f32,
-                            x: location[0] as f32,
-                            y: location[1] as f32,
-                            old_x: location[0] as f32,
-                            old_y: location[1] as f32,
-                            path_index: 1,
-                            path: None
-                        })
+                        if !is_solid(self.tilemap[location[1]][location[0]]) && location[0] != 0 && location[1] != 0 {
+                            if rng.gen_bool(0.5f64) {
+                                self.enemies.push(Enemy { 
+                                    name: self.id_count.to_string(), 
+                                    ai: Ai::Ground,
+                                    behaviour: Behaviour::AttackMoving,
+                                    speed: 2.0f32,
+                                    x: location[0] as f32,
+                                    y: location[1] as f32,
+                                    old_x: location[0] as f32,
+                                    old_y: location[1] as f32,
+                                    path_index: 1,
+                                    path: None,
+                                    last_hit: Instant::now()
+                                });
+                            }
+                            else {
+                                self.enemies.push(Enemy { 
+                                    name: self.id_count.to_string(), 
+                                    ai: Ai::Spider,
+                                    behaviour: Behaviour::AttackSingle,
+                                    speed: 1.5f32,
+                                    x: location[0] as f32,
+                                    y: location[1] as f32,
+                                    old_x: location[0] as f32,
+                                    old_y: location[1] as f32,
+                                    path_index: 1,
+                                    path: None,
+                                    last_hit: Instant::now()
+                                });
+                            }
+                            return Some(self.id_count.to_string());
+                        }
                     }
                 }
             }
         }
+        None
     }
     pub fn move_enemies(&mut self, deltatime: f32) {
         for enemy in self.enemies.iter_mut() {
-            if let Some(packet) = enemy.movement(deltatime) {
-                self.packets.push(packet);
-            }
+            self.packets.append(&mut enemy.movement(deltatime, &self.players));
         }
     }
 }

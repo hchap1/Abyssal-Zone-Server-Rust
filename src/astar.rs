@@ -6,7 +6,15 @@ use std::vec;
 #[derive(PartialEq)]
 pub enum Ai {
     Spider,
-    Ground
+    Ground,
+    Corridor
+}
+
+#[derive(PartialEq)]
+pub enum Behaviour {
+    SeekFromAnywhere,
+    AttackMoving,
+    AttackSingle
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -106,6 +114,7 @@ impl Node {
 }
 
 fn walkable(tilemap: &Vec<Vec<usize>>, old_position: &Position, new_position: &Position, ai: &Ai) -> bool {
+    if *ai == Ai::Corridor { return true; }
     let dy: isize = new_position.y as isize - old_position.y as isize;
     if *ai == Ai::Spider { 
         return vec![2, 5, 3, 7, 6].contains(&tilemap[new_position.y][new_position.x]); 
@@ -136,7 +145,7 @@ fn walkable(tilemap: &Vec<Vec<usize>>, old_position: &Position, new_position: &P
 
 pub fn astar(tilemap: &Vec<Vec<usize>>, start: Position, end: Position, ai_type: &Ai) -> Option<Vec<Position>> {
     let start_time = Instant::now();
-    let run_duration = Duration::from_millis(50);
+    let run_duration = Duration::from_millis(10);
     let start_node = Node { parent: None, position: start.clone(), g: 0, h: 0, f: 0 };
     let end_node = Node { parent: None, position: end.clone(), g: 0, h: 0, f: 0 };
 

@@ -17,17 +17,24 @@ impl From<Vec<Vec<Room>>> for Tilemap {
         let spawn_room: [usize; 2] = [rng.gen_range(0..size), rng.gen_range(0..size)];
         let mut tilemap = Tilemap { 
             tilemap: vec![], 
-            spawn_coordinates: [spawn_room[0] * 16 + 9, (size - spawn_room[1] - 1) * 16 + 2],
+            spawn_coordinates: [spawn_room[0] * 32 + 9, (size - spawn_room[1] - 1) * 32 + 2 + (32 - Room::from(0).tilemap.len())],
             spawn_locations: vec![]
         };
         let mut raw_tilemap: Vec<Vec<usize>> = vec![];
         room_map[spawn_room[1]][spawn_room[0]] = 0.into();
         let mut count: usize = 0;
         for room_row in 0..size {
-            for tile_row in 0..16 {
+            for tile_row in 0..32 {
                 let mut row: Vec<usize> = vec![];
                 for room_column in 0..size {
-                    row.append(&mut room_map[room_row][room_column].tilemap[tile_row]);
+                    for tile_column in 0..32 {
+                        if tile_row < room_map[room_row][room_column].tilemap.len() && tile_column < room_map[room_row][room_column].tilemap.len() {
+                            row.push(room_map[room_row][room_column].tilemap[tile_row][tile_column]);
+                        }
+                        else {
+                            row.push(1);
+                        }
+                    }
                 }
                 count += 1;
                 raw_tilemap.push(row);
@@ -35,12 +42,69 @@ impl From<Vec<Vec<Room>>> for Tilemap {
         }
         for room_row in 0..size {
             for room_column in 0..size {
-                tilemap.spawn_locations.push([room_map[room_row][room_column].spawn_x + room_column * 16, room_map[room_row][room_column].spawn_y + room_row * 16]);
+                tilemap.spawn_locations.push([room_map[room_row][room_column].spawn_x + room_column * 32, room_map[room_row][room_column].spawn_y + room_row * 32 + (32 - room_map[room_row][room_column].tilemap.len())]);
             }
         }
         let final_length: usize = raw_tilemap.len();
         for row in 0..final_length {
             tilemap.tilemap.push(replace(&mut raw_tilemap[final_length - row - 1], vec![]));
+        }
+        room_map.reverse();
+        for row in &room_map {
+            for item in row {
+                print!(" {:?}", item.id);
+            }
+            println!();
+        }
+        for room_row in 0..size {
+            for room_column in 0..size {
+                if room_column < size - 1 {
+                    let this_room: &Room = &room_map[room_row][room_column];
+                    let next_room: &Room = &room_map[room_row][room_column + 1];
+                    if let (Some(this_e), Some(next_e)) = (this_room.entrance_right, next_room.entrance_left) {
+                        println!("Room {} has a right e of {this_e} and room {} is next to it with a left e of {next_e}.", this_room.id, next_room.id);
+                        let start: Position = Position::new(room_column * 32 + this_room.tilemap.len(), room_row * 32 + (32 - this_room.tilemap.len()) + this_e);
+                        let end: Position = Position::new(room_column * 32 + 32, room_row * 32 + (32 - next_room.tilemap.len()) + next_e);
+                        if let Some(path) = astar(&tilemap.tilemap, start, end, &Ai::Corridor) {
+                            for point in &path {
+                                let x: usize = point.x;
+                                let y: usize = point.y;
+                                tilemap.tilemap[y][x] = 2;
+                                tilemap.tilemap[y+1][x] = 2;
+                                if rng.gen_bool(0.04f64) {
+                                    tilemap.tilemap[y+1][x] = 3;
+                                }
+                                if rng.gen_bool(0.04f64) {
+                                    tilemap.tilemap[y+1][x] = 7;
+                                }
+                            }
+                        }
+                    }
+                }
+                if room_row < size - 1 {
+                    let this_room: &Room = &room_map[room_row][room_column];
+                    let next_room: &Room = &room_map[room_row + 1][room_column];
+                    if let (Some(this_e), Some(next_e)) = (this_room.entrance_top, next_room.entrance_bottom) {
+                        println!("Room {} has a top e of {this_e} and room {} is above it with a bottom e of {next_e}.", this_room.id, next_room.id);
+                        let start: Position = Position::new(room_column * 32 + this_e, room_row * 32 + 31);
+                        let end: Position = Position::new(room_column * 32 + next_e, room_row * 32 + 32 + (32 - next_room.tilemap.len()));
+                        if let Some(path) = astar(&tilemap.tilemap, start, end, &Ai::Corridor) {
+                            for point in &path {
+                                let x: usize = point.x;
+                                let y: usize = point.y;
+                                tilemap.tilemap[y][x] = 6;
+                                tilemap.tilemap[y][x+1] = 6;
+                                if rng.gen_bool(0.04f64) {
+                                    tilemap.tilemap[y][x+2] = 3;
+                                }
+                                if rng.gen_bool(0.04f64) {
+                                    tilemap.tilemap[y][x+2] = 7;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
         }
         let mut to_remove: Vec<usize> = vec![];
         for (index, spawn_location) in tilemap.spawn_locations.iter().enumerate() {
@@ -70,7 +134,8 @@ pub struct Room {
     entrance_right:  Option<usize>,
     entrance_left:   Option<usize>,
     entrance_top:    Option<usize>,
-    entrance_bottom: Option<usize>
+    entrance_bottom: Option<usize>,
+    id: usize
 }
 
 impl Room {
@@ -82,7 +147,8 @@ impl Room {
             entrance_right:  None, 
             entrance_left:   None, 
             entrance_top:    None, 
-            entrance_bottom: None 
+            entrance_bottom: None,
+            id: 0
         }
     }
 }
@@ -90,6 +156,7 @@ impl Room {
 impl From<usize> for Room {
     fn from(id: usize) -> Self {
         let mut room = Room::new();
+        room.id = id;
         let filename = format!("assets/levels/{}.tilemap", id);
         let mut width: usize = 0;
         match read_to_string(&filename) {

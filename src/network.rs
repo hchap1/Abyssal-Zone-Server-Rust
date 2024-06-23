@@ -60,7 +60,9 @@ pub struct Server {
     join_code: Option<JoinCode>,
     enemy_controller: Arc<Mutex<Controller>>,
     controller_thread: Option<JoinHandle<()>>,
-    enemy_thread: Option<JoinHandle<()>>
+    enemy_thread: Option<JoinHandle<()>>,
+    active_enemies: Vec<String>,
+    enemy_packets: Vec<String>
 }
 
 
@@ -72,7 +74,7 @@ fn listen(listener: Arc<Mutex<Listener>>, tcp_listener: TcpListener) {
                 let mut listener = listener.lock().unwrap();
                 for packet in &listener.initial_packet {
                     let _ = stream.write_all(packet.as_bytes());
-                    sleep(Duration::from_millis(2));
+                    sleep(Duration::from_millis(50));
                 }
                 listener.client = Some((stream, addr));
             }
@@ -139,10 +141,12 @@ fn letter_to_num(char: char) -> usize {
 impl From<&Vec<Interface>> for JoinCode {
     fn from(if_addrs: &Vec<Interface>) -> Self {
         let mut ip: String = String::from("0.0.0.0");
+        println!("Hosting on:");
         for iface in if_addrs {
             if let get_if_addrs::IfAddr::V4(iface_v4) = &iface.addr {
                 if !iface.is_loopback() {
                     let addr_string: String = format!("{}", iface_v4.ip);
+                    println!("...{addr_string}:50000");
                     if addr_string.starts_with("192.168.") {
                         ip = addr_string;
                     }
@@ -288,7 +292,9 @@ impl Server {
                 join_code: Some((&interfaces).into()),
                 enemy_controller: controller,
                 controller_thread: None,
-                enemy_thread: None
+                enemy_thread: None,
+                active_enemies: vec![],
+                enemy_packets: vec![]
             };
             let server = Arc::new(Mutex::new(server));
 
@@ -340,16 +346,21 @@ fn accept(server: Arc<Mutex<Server>>, listener: Arc<Mutex<Listener>>) {
             };
             if let Some((client, addr)) = client_option {
                 let mut active_players: Vec<String> = vec![];
-                println!("Preparing initial transmission.");
                 for client in server.clients.iter() {
                     let c = client.lock().unwrap();
-                    println!("Unwrapped client: {}", c.num);
                     if let Some(pd) = &c.player_data {
-                        println!("PLAYER DETECTED: {}", pd.username);
                         active_players.push(pd.username.clone());
                     }
                 }
                 let c: Arc<Mutex<Client>> = Client::new(client, addr, active_players, vec![], count);
+                let mut outgoing: Vec<String> = vec![];
+                for enemy in &server.active_enemies {
+                    outgoing.push(format!("<ne>{enemy}!"));
+                }
+                {
+                    let mut tc = c.lock().unwrap();
+                    tc.send_all(&outgoing);
+                }
                 println!("Server polled client: {addr}");
                 server.clients.push(c);
                 count += 1;
@@ -364,10 +375,13 @@ fn accept(server: Arc<Mutex<Server>>, listener: Arc<Mutex<Listener>>) {
 }
 
 fn send(server: Arc<Mutex<Server>>) {
+    let mut start_time = Instant::now();
+    let run_duration = Duration::from_secs(1);
     loop {
         let mut packets: Vec<String> = vec![];
         {
             let mut server = server.lock().unwrap();
+            packets.append(&mut server.enemy_packets);
             if !server.running { break; }
             for client in &server.clients {
                 let mut client = client.lock().unwrap();
@@ -377,12 +391,18 @@ fn send(server: Arc<Mutex<Server>>) {
             let mut to_remove: Vec<usize> = vec![];
             let mut disconnect: Vec<String> = vec![];
             let mut count: usize = 0;
-
+            if Instant::now().duration_since(start_time) > run_duration {
+                start_time = Instant::now();
+                let mut enemy_join_packets: Vec<String> = vec![];
+                for enemy in &server.active_enemies {
+                    enemy_join_packets.push(format!("<ne>{enemy}!"));
+                }
+                packets.append(&mut enemy_join_packets);
+            }
             for client in &server.clients {
                 let mut c = client.lock().unwrap();
                 c.send_all(&packets);
             }
-
             for client in &server.clients {
                 let c = client.lock().unwrap();
                 if c.status != Status::Running {
@@ -425,7 +445,12 @@ fn push_updates_to_enemies(server: Arc<Mutex<Server>>, controller: Arc<Mutex<Con
         {
             let mut controller = controller.lock().unwrap();
             controller.update_players(active_player_data);
-            controller.update_enemies();
+            let new_enemy: Option<String> = controller.update_enemies();
+            if let Some(new_enemy) = new_enemy {
+                let mut server = server.lock().unwrap();
+                server.active_enemies.push(new_enemy.clone());
+                server.enemy_packets.push(format!("<ne>{new_enemy}!"));
+            }
         }
         sleep(Duration::from_millis(500));
     }
@@ -440,11 +465,8 @@ fn enemy_cycle(server: Arc<Mutex<Server>>, controller: Arc<Mutex<Controller>>) {
         {
             let mut controller = controller.lock().unwrap();
             controller.move_enemies(deltatime);
-            let server = server.lock().unwrap();
-            for client in &server.clients {
-                let mut c = client.lock().unwrap();
-                c.outgoing.append(&mut controller.packets);
-            }
+            let mut server = server.lock().unwrap();
+            server.enemy_packets.append(&mut controller.packets);
         }
         sleep(Duration::from_millis(16));
     }
