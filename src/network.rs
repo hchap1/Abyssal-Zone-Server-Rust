@@ -5,9 +5,9 @@ use std::sync::{Arc, Mutex};
 use std::thread::{spawn, sleep, JoinHandle};
 use std::time::{Instant, Duration};
 use get_if_addrs::{get_if_addrs, Interface};
-use crate::packet::{Packet, PlayerData, tilemap_packet};
+use crate::packet::{PlayerData, tilemap_packet};
 use crate::tilemap::Tilemap;
-use crate::enemy::{Controller, get_enemy_packet};
+use crate::enemy::Controller;
 use crate::util::split_with_delimiter;
 
 #[derive(PartialEq)]
@@ -98,7 +98,6 @@ fn recv(receiver: Arc<Mutex<Receiver>>, mut stream: TcpStream) {
                     let mut receiver = receiver.lock().unwrap();
                     let message: String = data.to_string();
                     let mut packets: Vec<String> = split_with_delimiter(message, "!");
-                    println!("Received packets: {:?}", packets);
                     receiver.incoming.append(&mut packets);
                 }
                 Err(e) => {
@@ -195,9 +194,9 @@ impl Client {
     pub fn new(stream: TcpStream, addr: SocketAddr, active_players: Vec<String>, active_enemies: Vec<String>, num: isize) -> Arc<Mutex<Client>> {
         let mut outgoing: Vec<String> = vec![];
         for player in &active_players {
-            outgoing.push(format!("pcon>{player}"));
+            outgoing.push(format!("<pcon>{player}!"));
         } 
-        let receiver: Arc<Mutex<Receiver>> = Arc::new(Mutex::new(Receiver { username: num.to_string(), incoming: vec![], outgoing: outgoing, status: Status::Running }));
+        let receiver: Arc<Mutex<Receiver>> = Arc::new(Mutex::new(Receiver { username: num.to_string(), incoming: vec![], outgoing: vec![], status: Status::Running }));
         let recv_receiver = Arc::clone(&receiver);
         let recv_stream = stream.try_clone().unwrap();
         let send_receiver = Arc::clone(&receiver);
@@ -210,8 +209,8 @@ impl Client {
             send_thread: None,
             _addr: addr.to_string(),
             _running: true,
-            incoming: vec![],
-            outgoing: vec![],
+            incoming: vec![],   
+            outgoing: outgoing,
             status: Status::Running,
             num: num
         };
@@ -257,8 +256,9 @@ fn receive(client: Arc<Mutex<Client>>, receiver: Arc<Mutex<Receiver>>) {
                 }
                 replace(&mut receiver.incoming, vec![])
             };
-            if let Some(_) = client.player_data {
-                client.player_data.as_mut().unwrap().parse_updates(&incoming);
+            match client.player_data {
+                Some(ref mut pd) => pd.parse_updates(&incoming),
+                None => client.player_data = Some(PlayerData::new())
             }
             client.incoming.append(&mut incoming);
         }
@@ -304,8 +304,9 @@ impl Server {
             let controller_thread = spawn(move || {
                 push_updates_to_enemies(controller_server, player_data_ref);
             });
+            let server_enemy_ref = Arc::clone(&server);
             let enemy_thread = spawn(move || {
-                enemy_cycle(enemy_movement_ref);
+                enemy_cycle(server_enemy_ref, enemy_movement_ref);
             });
             {
                 let mut server = server.lock().unwrap();
@@ -337,14 +338,17 @@ fn accept(server: Arc<Mutex<Server>>, listener: Arc<Mutex<Listener>>) {
                 let mut listener = listener.lock().unwrap();
                 replace(&mut listener.client, None)
             };
-            let mut active_players: Vec<String> = vec![];
-            for client in server.clients.iter() {
-                let c = client.lock().unwrap();
-                if let Some(pd) = &c.player_data {
-                    active_players.push(pd.username.clone());
-                }
-            }
             if let Some((client, addr)) = client_option {
+                let mut active_players: Vec<String> = vec![];
+                println!("Preparing initial transmission.");
+                for client in server.clients.iter() {
+                    let c = client.lock().unwrap();
+                    println!("Unwrapped client: {}", c.num);
+                    if let Some(pd) = &c.player_data {
+                        println!("PLAYER DETECTED: {}", pd.username);
+                        active_players.push(pd.username.clone());
+                    }
+                }
                 let c: Arc<Mutex<Client>> = Client::new(client, addr, active_players, vec![], count);
                 println!("Server polled client: {addr}");
                 server.clients.push(c);
@@ -371,6 +375,7 @@ fn send(server: Arc<Mutex<Server>>) {
                 let _ = replace(&mut client.incoming, vec![]);
             }
             let mut to_remove: Vec<usize> = vec![];
+            let mut disconnect: Vec<String> = vec![];
             let mut count: usize = 0;
 
             for client in &server.clients {
@@ -382,10 +387,17 @@ fn send(server: Arc<Mutex<Server>>) {
                 let c = client.lock().unwrap();
                 if c.status != Status::Running {
                     to_remove.push(count);
+                    if let Some(pd) = &c.player_data {
+                        disconnect.push(format!("<pdis>{}!", pd.username));
+                    }
                 }
                 else {
                     count += 1;
                 }
+            }
+            for client in &server.clients {
+                let mut c = client.lock().unwrap();
+                c.send_all(&disconnect);
             }
             for index in to_remove {
                 server.clients.remove(index);
@@ -404,7 +416,9 @@ fn push_updates_to_enemies(server: Arc<Mutex<Server>>, controller: Arc<Mutex<Con
             for client in &server.clients {
                 let client = client.lock().unwrap();
                 if let Some(player_data) = &client.player_data {
-                    active_player_data.push(player_data.clone());
+                    if player_data.username != "NONE" {
+                        active_player_data.push(player_data.clone());
+                    }
                 }
             }
         }
@@ -417,7 +431,7 @@ fn push_updates_to_enemies(server: Arc<Mutex<Server>>, controller: Arc<Mutex<Con
     }
 }
 
-fn enemy_cycle(controller: Arc<Mutex<Controller>>) {
+fn enemy_cycle(server: Arc<Mutex<Server>>, controller: Arc<Mutex<Controller>>) {
     let mut previous_time = Instant::now();
     loop {
         let current_time = Instant::now();
@@ -426,6 +440,11 @@ fn enemy_cycle(controller: Arc<Mutex<Controller>>) {
         {
             let mut controller = controller.lock().unwrap();
             controller.move_enemies(deltatime);
+            let server = server.lock().unwrap();
+            for client in &server.clients {
+                let mut c = client.lock().unwrap();
+                c.outgoing.append(&mut controller.packets);
+            }
         }
         sleep(Duration::from_millis(16));
     }

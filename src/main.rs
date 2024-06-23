@@ -8,11 +8,11 @@ mod util;
 use crate::network::Server;
 use crate::tilemap::{Tilemap, randomize_rooms};
 use std::{thread, time::Duration};
-use crate::util::split_with_delimiter;
 
 fn main() {
     let duration: Duration = Duration::from_millis(1000);
-    let tilemap: Tilemap = Tilemap::from(randomize_rooms(5, 4));
+    println!("Beginning...");
+    let tilemap: Tilemap = Tilemap::from(randomize_rooms(2, 4));
     match Server::new(tilemap) {
         Ok(server) => {
             {

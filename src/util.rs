@@ -6,7 +6,9 @@ pub fn split_with_delimiter(input: String, delimiter: &str) -> Vec<String> {
         let end = start + pos + delimiter.len();
         let component: String = input[start..end].to_string();
         if !component.is_empty() && !component.chars().all(|c| c == '\0') {
-            result.push(component);
+            if component.ends_with('!') && component.starts_with('<') {
+                result.push(component);
+            }
         }
         start = end;
     }
@@ -14,7 +16,9 @@ pub fn split_with_delimiter(input: String, delimiter: &str) -> Vec<String> {
     if start < input.len() {
         let component: String = input[start..].to_string();
         if !component.is_empty() && !component.chars().all(|c| c == '\0') {
-            result.push(component);
+            if component.ends_with('!') && component.starts_with('<') {
+                result.push(component);
+            }
         }
     }
 

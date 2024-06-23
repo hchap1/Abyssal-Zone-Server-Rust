@@ -31,12 +31,16 @@ impl From<&str> for PlayerData {
 }
 
 impl PlayerData {
+    pub fn new() -> Self {
+        PlayerData { x_position: 0.0f32, y_position: 0.0f32, crouching: false, frame: 0, direction: 0, username: String::from("NONE") }
+    }
     pub fn parse_updates(&mut self, packets: &Vec<String>) {
         for packet in packets {
             let components: Vec<String> = packet.split('!').map(|x| String::from(x)).collect::<Vec<String>>()[0].split('>').map(|x| String::from(x)).collect();
             let mut identifier: String = components[0].clone();
             identifier.remove(0);
             let data: Vec<String> = components[1].split(',').map(|x| String::from(x)).collect::<Vec<String>>();
+            self.username = data[0].clone();
             if identifier == "pp" {
                 if let (Ok(x), Ok(y)) = (data[1].parse::<f32>(), data[2].parse::<f32>()) {
                     self.x_position = x;
@@ -62,12 +66,6 @@ impl PlayerData {
 
 pub struct Packet {
     pub packet: String
-}
-
-impl Packet {
-    pub fn from_enemy_and_player_data(enemy_packet: String, player_data: Vec<PlayerData>) -> Self {
-        Packet { packet: enemy_packet + &Packet::from(&player_data).packet }
-    }
 }
 
 impl From<&Vec<PlayerData>> for Packet {

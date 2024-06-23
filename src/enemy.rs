@@ -1,6 +1,5 @@
 use crate::astar::{astar, Ai, Position};
 use crate::packet::PlayerData;
-use std::sync::{Arc, Mutex};
 use rand::Rng;
 use rand::{thread_rng, rngs::ThreadRng};
 
@@ -10,12 +9,14 @@ pub struct Enemy {
     speed: f32,
     x: f32,
     y: f32,
+    old_x: f32,
+    old_y: f32,
     path_index: usize,
     path: Option<Vec<Position>>
 }
 
 impl Enemy {
-    fn movement(&mut self, deltatime: f32) {
+    fn movement(&mut self, deltatime: f32) -> Option<String> {
         if let Some(path) = &self.path {
             if self.path_index < path.len() {
                 let target_position: &Position = &path[self.path_index];
@@ -29,24 +30,29 @@ impl Enemy {
                     self.x += dx;
                     self.y += dy;
                 }
+                if self.old_x != self.x || self.old_y != self.y {
+                    return Some(format!("<ep>{},{},{}!", self.name, self.x, self.y));
+                }
+                self.old_x = self.x;
+                self.old_y = self.y;
             }
         }
-    }
-    fn get_data_as_string(&self) -> String {
-        format!("{},{},{}!", self.x, self.y, self.name)
+        return None;
     }
 }
 
 pub struct Controller {
+    id_count: usize,
     enemies: Vec<Enemy>,
     players: Vec<PlayerData>,
     tilemap: Vec<Vec<usize>>,
-    spawn_locations: Vec<[usize; 2]>
+    spawn_locations: Vec<[usize; 2]>,
+    pub packets: Vec<String>
 }
 
 impl Controller {
     pub fn new(players: Vec<PlayerData>, tilemap: Vec<Vec<usize>>, spawn_locations: Vec<[usize; 2]>) -> Self {
-        Controller { enemies: vec![], players: players, tilemap: tilemap, spawn_locations: spawn_locations }
+        Controller { id_count: 0, enemies: vec![], players: players, tilemap: tilemap, spawn_locations: spawn_locations, packets: vec![] }
     }
     pub fn update_players(&mut self, players: Vec<PlayerData>) {
         self.players = players;
@@ -55,7 +61,7 @@ impl Controller {
         let mut rng: ThreadRng = thread_rng();
         if self.enemies.len() > 0 {
             for i in 0..self.enemies.len() {
-                let start: Position = Position::new(self.enemies[i].x.round() as usize, (self.enemies[i].y + 0.5).round() as usize);
+                let start: Position = Position::new(self.enemies[i].x.round() as usize, (self.enemies[i].y).round() as usize);
                 let mut min_dist: f32 = -1.0f32;
                 let mut closest_player_index: usize = 999;
                 for (index, player) in self.players.iter().enumerate() {
@@ -78,12 +84,14 @@ impl Controller {
                 }
             }
         }
-        if self.enemies.len() < 5 {
-            let frame_probability: f64 = 5.0f64 * 0.016f64; // deltatime
+        if self.enemies.len() < 10 {
+            let frame_probability: f64 = 5.0f64 * 0.02f64; // deltatime
             let random_value: f64 = rng.gen();
             let result: bool = random_value < frame_probability;
-            if result && false {
+            if result {
                 if self.spawn_locations.len() > 0 {
+                    self.id_count += 1;
+                    self.packets.push(format!("<ne>{}!", self.id_count));
                     let mut location: Option<[usize; 2]> = None;
                     for _ in 0..10 {
                         let index: usize = rng.gen_range(0..self.spawn_locations.len());
@@ -104,11 +112,13 @@ impl Controller {
                     }
                     if let Some(location) = location {
                         self.enemies.push(Enemy { 
-                            name: String::from("Spider"), 
+                            name: self.id_count.to_string(), 
                             ai: Ai::Spider,
-                            speed: 4.0f32,
+                            speed: 1.0f32,
                             x: location[0] as f32,
                             y: location[1] as f32,
+                            old_x: location[0] as f32,
+                            old_y: location[1] as f32,
                             path_index: 1,
                             path: None
                         })
@@ -119,17 +129,9 @@ impl Controller {
     }
     pub fn move_enemies(&mut self, deltatime: f32) {
         for enemy in self.enemies.iter_mut() {
-            enemy.movement(deltatime);
+            if let Some(packet) = enemy.movement(deltatime) {
+                self.packets.push(packet);
+            }
         }
     }
-}
-
-pub fn get_enemy_packet(controller: &Arc<Mutex<Controller>>) -> String {
-    let controller = controller.lock().unwrap();
-    let mut packet: String = String::new();
-    for (index, enemy) in controller.enemies.iter().enumerate() {
-        packet += &enemy.get_data_as_string();
-        if index < controller.enemies.len() - 1 { packet.push('/'); }
-    }
-    packet
 }

@@ -1,4 +1,5 @@
 use std::collections::BinaryHeap;
+use std::time::{Instant, Duration};
 use std::cmp::Ordering;
 use std::vec;
 
@@ -134,6 +135,8 @@ fn walkable(tilemap: &Vec<Vec<usize>>, old_position: &Position, new_position: &P
 }
 
 pub fn astar(tilemap: &Vec<Vec<usize>>, start: Position, end: Position, ai_type: &Ai) -> Option<Vec<Position>> {
+    let start_time = Instant::now();
+    let run_duration = Duration::from_millis(50);
     let start_node = Node { parent: None, position: start.clone(), g: 0, h: 0, f: 0 };
     let end_node = Node { parent: None, position: end.clone(), g: 0, h: 0, f: 0 };
 
@@ -144,7 +147,7 @@ pub fn astar(tilemap: &Vec<Vec<usize>>, start: Position, end: Position, ai_type:
     open_list.push(start_node);
 
     while _running {
-        if open_list.is_empty()  {
+        if open_list.is_empty() || Instant::now().duration_since(start_time) > run_duration {
             _running = false;
             break;
         }
