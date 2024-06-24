@@ -129,11 +129,11 @@ impl Controller {
                 }
             }
         }
-        if self.enemies.len() < 40 {
+        if self.enemies.len() < 50 {
             let frame_probability: f64 = 5.0f64 * 0.02f64; // deltatime
             let random_value: f64 = rng.gen();
             let result: bool = random_value < frame_probability;
-            if result {
+            if result || true {
                 if self.spawn_locations.len() > 0 {
                     self.id_count += 1;
                     let mut location: Option<[usize; 2]> = None;

@@ -74,7 +74,7 @@ fn listen(listener: Arc<Mutex<Listener>>, tcp_listener: TcpListener) {
                 let mut listener = listener.lock().unwrap();
                 for packet in &listener.initial_packet {
                     let _ = stream.write_all(packet.as_bytes());
-                    sleep(Duration::from_millis(50));
+                    sleep(Duration::from_millis(5));
                 }
                 listener.client = Some((stream, addr));
             }
