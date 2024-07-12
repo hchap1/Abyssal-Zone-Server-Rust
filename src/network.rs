@@ -74,7 +74,7 @@ fn listen(listener: Arc<Mutex<Listener>>, tcp_listener: TcpListener) {
                 let mut listener = listener.lock().unwrap();
                 for packet in &listener.initial_packet {
                     let _ = stream.write_all(packet.as_bytes());
-                    sleep(Duration::from_millis(5));
+                    sleep(Duration::from_millis(50));
                 }
                 listener.client = Some((stream, addr));
             }
@@ -88,7 +88,7 @@ fn listen(listener: Arc<Mutex<Listener>>, tcp_listener: TcpListener) {
 }
 
 fn recv(receiver: Arc<Mutex<Receiver>>, mut stream: TcpStream) {
-    let mut buffer: [u8; 512] = [0; 512];
+    let mut buffer: [u8; 1024] = [0; 1024];
     loop {
         match stream.read(&mut buffer) {
             Ok(0) => {
@@ -97,6 +97,7 @@ fn recv(receiver: Arc<Mutex<Receiver>>, mut stream: TcpStream) {
             }
             Ok(_) => match std::str::from_utf8(&buffer) {
                 Ok(data) => {
+                    println!("Received packet from client: |{}|", data.to_string());
                     let mut receiver = receiver.lock().unwrap();
                     let message: String = data.to_string();
                     let mut packets: Vec<String> = split_with_delimiter(message, "!");
@@ -111,7 +112,7 @@ fn recv(receiver: Arc<Mutex<Receiver>>, mut stream: TcpStream) {
                 receiver.status = Status::Error;
             }
         }
-        buffer = [0; 512];
+        buffer = [0; 1024];
         sleep(Duration::from_millis(10));
     }
 }
@@ -435,8 +436,10 @@ fn push_updates_to_enemies(server: Arc<Mutex<Server>>, controller: Arc<Mutex<Con
             if !server.running { break; }
             for client in &server.clients {
                 let client = client.lock().unwrap();
+                println!("Investigating client!");
                 if let Some(player_data) = &client.player_data {
                     if player_data.username != "NONE" {
+                        println!("Client has data!");
                         active_player_data.push(player_data.clone());
                     }
                 }

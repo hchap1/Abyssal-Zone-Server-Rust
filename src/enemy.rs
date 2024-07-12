@@ -5,6 +5,17 @@ use std::time::{Instant, Duration};
 use rand::{thread_rng, rngs::ThreadRng};
 use crate::astar::is_solid;
 
+fn compass_atan(x: f32, y: f32) -> f32 {
+    if x == 0.0 && y == 0.0 {
+        return 0.0;
+    }
+    let angle = y.atan2(x);
+    if angle < 0.0 {
+        return angle + 2.0 * std::f32::consts::PI;
+    }
+    angle
+}
+
 pub struct Enemy {
     name: String,
     ai: Ai,
@@ -22,11 +33,14 @@ pub struct Enemy {
 impl Enemy {
     fn movement(&mut self, deltatime: f32, players: &Vec<PlayerData>) -> Vec<String> {
         let mut packets: Vec<String> = vec![];
+        let mut rotation: f32 = 0.0f32;
         if let Some(path) = &self.path {
             if self.path_index < path.len() {
                 let target_position: &Position = &path[self.path_index];
                 let mut dx: f32 = target_position.x as f32 - self.x;
                 let mut dy: f32 = target_position.y as f32 - self.y;
+                rotation = compass_atan(dx, dy);
+                println!("Rotation: {rotation}");
                 let mag: f32 = (dx.powf(2.0f32) + dy.powf(2.0f32)).sqrt();
                 if mag <= 0.08 { self.path_index += 1; }
                 else {
@@ -44,7 +58,7 @@ impl Enemy {
                     self.y += dy;
                 }
                 if self.old_x != self.x || self.old_y != self.y {
-                    packets.push(format!("<ep>{},{},{}!", self.name, self.x, self.y));
+                    packets.push(format!("<ep>{},{},{},{}!", self.name, self.x, self.y, rotation));
                 }
                 self.old_x = self.x;
                 self.old_y = self.y;
@@ -53,16 +67,24 @@ impl Enemy {
         if self.old_x == 0.0f32 && self.old_y == 0.0f32 {
             self.old_x = self.x;
             self.old_y = self.y;
-            packets.push(format!("<ep>{},{},{}!", self.name, self.x, self.y));
+            packets.push(format!("<ep>{},{},{},{}!", self.name, self.x, self.y, rotation));
         }
-        if Instant::now().duration_since(self.last_hit) > Duration::from_millis(500) {
-            for player in players {
-                let distance: f32 = ((self.x - player.x_position).powf(2.0f32) + (self.y - player.y_position).powf(2.0f32)).sqrt();
-                if distance < 0.5f32 {
+        for player in players {
+            let distance: f32 = ((self.x - player.x_position).powf(2.0f32) + (self.y - player.y_position).powf(2.0f32)).sqrt();
+            if distance < 3.0f32 {
+                if let Some(path) = &self.path {
+                    if let Some(last_node) = path.last() {
+                        let distance: f32 = ((last_node.x as f32 - player.x_position).powf(2.0f32) + (last_node.y as f32 - player.y_position).powf(2.0f32)).sqrt();
+                        if distance > 5.0f32 {
+                            self.path_index = 999;
+                        }
+                    }
+                }
+                if Instant::now().duration_since(self.last_hit) > Duration::from_millis(1000) && distance < 0.8f32 {
+                    self.path_index = 999;
                     let packet: String = format!("<ph>{},{}!", player.username, -20);
                     packets.push(packet);
                     self.last_hit = Instant::now();
-                    self.path_index += 999;
                     break;
                 }
             }
@@ -129,7 +151,7 @@ impl Controller {
                 }
             }
         }
-        if self.enemies.len() < 50 {
+        if self.enemies.len() < 1 {
             let frame_probability: f64 = 5.0f64 * 0.02f64; // deltatime
             let random_value: f64 = rng.gen();
             let result: bool = random_value < frame_probability;
@@ -157,7 +179,7 @@ impl Controller {
                     }
                     if let Some(location) = location {
                         if !is_solid(self.tilemap[location[1]][location[0]]) && location[0] != 0 && location[1] != 0 {
-                            if rng.gen_bool(0.5f64) {
+                            if rng.gen_bool(0.5f64) && false {
                                 self.enemies.push(Enemy { 
                                     name: self.id_count.to_string(), 
                                     ai: Ai::Ground,

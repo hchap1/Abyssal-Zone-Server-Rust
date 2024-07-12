@@ -1,6 +1,6 @@
-use std::{fs::read_to_string, thread::spawn};
+use std::{fs::read_to_string};
 use rand::Rng;
-use crate::astar::{is_solid, Position, astar, Ai};
+use crate::astar::{Position, astar, Ai};
 use core::mem::replace;
 
 #[derive(Clone)]
@@ -20,6 +20,7 @@ impl From<Vec<Vec<Room>>> for Tilemap {
             spawn_coordinates: [spawn_room[0] * 32 + 9, (size - spawn_room[1] - 1) * 32 + 2 + (32 - Room::from(0).tilemap.len())],
             spawn_locations: vec![]
         };
+        println!("Chose spawn location: [{},{}]!", tilemap.spawn_coordinates[0], tilemap.spawn_coordinates[1]);
         let mut raw_tilemap: Vec<Vec<usize>> = vec![];
         room_map[spawn_room[1]][spawn_room[0]] = 0.into();
         let mut count: usize = 0;
@@ -40,29 +41,32 @@ impl From<Vec<Vec<Room>>> for Tilemap {
                 raw_tilemap.push(row);
             }
         }
-        for room_row in 0..size {
-            for room_column in 0..size {
-                tilemap.spawn_locations.push([room_map[room_row][room_column].spawn_x + room_column * 32, room_map[room_row][room_column].spawn_y + room_row * 32 + (32 - room_map[room_row][room_column].tilemap.len())]);
-            }
-        }
         let final_length: usize = raw_tilemap.len();
         for row in 0..final_length {
             tilemap.tilemap.push(replace(&mut raw_tilemap[final_length - row - 1], vec![]));
         }
-        room_map.reverse();
+
+        for room_row in 0..size {
+            for room_column in 0..size {
+                tilemap.spawn_locations.push([room_map[room_row][room_column].spawn_x + room_column * 32, room_map[room_row][room_column].spawn_y + room_row * 32 + (32 - room_map[room_row][room_column].tilemap.len())]);
+                if let Some(spawn_loc) = tilemap.spawn_locations.last() {
+                    println!("Spawn location @ {},{} : TILE_ID={}", spawn_loc[0], spawn_loc[1], tilemap.tilemap[spawn_loc[1]][spawn_loc[0]]);
+                }
+            }
+        }
         for row in &room_map {
             for item in row {
                 print!(" {:?}", item.id);
             }
             println!();
         }
+        room_map.reverse();
         for room_row in 0..size {
             for room_column in 0..size {
                 if room_column < size - 1 {
                     let this_room: &Room = &room_map[room_row][room_column];
                     let next_room: &Room = &room_map[room_row][room_column + 1];
                     if let (Some(this_e), Some(next_e)) = (this_room.entrance_right, next_room.entrance_left) {
-                        println!("Room {} has a right e of {this_e} and room {} is next to it with a left e of {next_e}.", this_room.id, next_room.id);
                         let start: Position = Position::new(room_column * 32 + this_room.tilemap.len(), room_row * 32 + (32 - this_room.tilemap.len()) + this_e);
                         let end: Position = Position::new(room_column * 32 + 32, room_row * 32 + (32 - next_room.tilemap.len()) + next_e);
                         if let Some(path) = astar(&tilemap.tilemap, start, end, &Ai::Corridor) {
@@ -85,7 +89,6 @@ impl From<Vec<Vec<Room>>> for Tilemap {
                     let this_room: &Room = &room_map[room_row][room_column];
                     let next_room: &Room = &room_map[room_row + 1][room_column];
                     if let (Some(this_e), Some(next_e)) = (this_room.entrance_top, next_room.entrance_bottom) {
-                        println!("Room {} has a top e of {this_e} and room {} is above it with a bottom e of {next_e}.", this_room.id, next_room.id);
                         let start: Position = Position::new(room_column * 32 + this_e, room_row * 32 + 31);
                         let end: Position = Position::new(room_column * 32 + next_e, room_row * 32 + 32 + (32 - next_room.tilemap.len()));
                         if let Some(path) = astar(&tilemap.tilemap, start, end, &Ai::Corridor) {
@@ -105,24 +108,6 @@ impl From<Vec<Vec<Room>>> for Tilemap {
                     }
                 }
             }
-        }
-        let mut to_remove: Vec<usize> = vec![];
-        for (index, spawn_location) in tilemap.spawn_locations.iter().enumerate() {
-            println!("Checking potential: {:?} -> {:?}", spawn_location, tilemap.spawn_coordinates);
-            let path: Option<Vec<Position>> = astar(&tilemap.tilemap, Position::from(*spawn_location), Position::from(tilemap.spawn_coordinates), &Ai::Spider);
-            if path == None {
-                println!("...invalid");
-                //to_remove.push(index);
-            }
-            else {
-                println!("...valid");
-            }
-        }
-        to_remove.sort();
-        let mut count: usize = 0;
-        for index in to_remove {
-            tilemap.spawn_locations.remove(index - count);
-            count += 1;
         }
         tilemap
     }
