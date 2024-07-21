@@ -36,7 +36,6 @@ impl PlayerData {
     }
     pub fn parse_updates(&mut self, packets: &Vec<String>) {
         for packet in packets {
-            println!("Copped packet - {packet}");
             let components: Vec<String> = packet.split('!').map(|x| String::from(x)).collect::<Vec<String>>()[0].split('>').map(|x| String::from(x)).collect();
             let mut identifier: String = components[0].clone();
             identifier.remove(0);

@@ -5,11 +5,21 @@ use std::time::{Instant, Duration};
 use rand::{thread_rng, rngs::ThreadRng};
 use crate::astar::is_solid;
 
+fn convert_angle(angle_ccw_from_x: f32) -> f32 {
+    const PI: f32 = std::f32::consts::PI;
+    let angle_cw_from_y = PI / 2.0 - angle_ccw_from_x;
+    if angle_cw_from_y < 0.0 {
+        angle_cw_from_y + 2.0 * PI
+    } else {
+        angle_cw_from_y
+    }
+}
+
 fn compass_atan(x: f32, y: f32) -> f32 {
     if x == 0.0 && y == 0.0 {
         return 0.0;
     }
-    let angle = y.atan2(x);
+    let angle = convert_angle(y.atan2(x));
     if angle < 0.0 {
         return angle + 2.0 * std::f32::consts::PI;
     }
@@ -40,7 +50,8 @@ impl Enemy {
                 let mut dx: f32 = target_position.x as f32 - self.x;
                 let mut dy: f32 = target_position.y as f32 - self.y;
                 rotation = compass_atan(dx, dy);
-                println!("Rotation: {rotation}");
+                let degrot = rotation * (180.0f32/3.1415f32);
+                println!("Rotation: {degrot}");
                 let mag: f32 = (dx.powf(2.0f32) + dy.powf(2.0f32)).sqrt();
                 if mag <= 0.08 { self.path_index += 1; }
                 else {
