@@ -165,7 +165,7 @@ impl From<&Vec<Interface>> for JoinCode {
         code += &port.to_string();
         JoinCode {
             _addr: ip + ":" + &port.to_string(),
-            code: code,
+            code,
         }
     }
 }
@@ -215,9 +215,9 @@ impl Client {
             _addr: addr.to_string(),
             _running: true,
             incoming: vec![],   
-            outgoing: outgoing,
+            outgoing,
             status: Status::Running,
-            num: num
+            num
         };
         let client = Arc::new(Mutex::new(client));
         let client_clone = Arc::clone(&client);
@@ -233,10 +233,6 @@ impl Client {
             client.send_thread = Some(send_thread);
         }
         return client;
-    }
-
-    pub fn send(&mut self, message: String) {
-        self.outgoing.push(message);
     }
 
     pub fn send_all(&mut self, messages: &Vec<String>) {

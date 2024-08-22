@@ -28,6 +28,7 @@ fn compass_atan(x: f32, y: f32) -> f32 {
 }
 
 pub struct Enemy {
+    uuid: usize,
     name: String,
     ai: Ai,
     id: usize,
@@ -62,14 +63,14 @@ impl Enemy {
                     self.position += delta;
                 }
                 if self.position != self.old_position {
-                    packets.push(format!("<ep>{},{},{},{}!", self.name, self.position.x, self.position.y, self.position.direction));
+                    packets.push(format!("<ep>{},{},{},{},{}!", self.uuid, self.id, self.position.x, self.position.y, self.position.direction));
                 }
                 self.old_position = self.position.clone();
             }
         }
         if self.old_position.magnitude == 0f32 {
             self.old_position = self.position.clone();
-            packets.push(format!("<ep>{},{},{},{}!", self.name, self.position.x, self.position.y, 0f32));
+            packets.push(format!("<ep>{},{},{},{},{}!", self.uuid, self.id, self.position.x, self.position.y, 0f32));
         }
         for player in players {
             let distance: f32 = (&self.position - &player.position).magnitude;
@@ -94,8 +95,10 @@ impl Enemy {
         return packets;
     }
 
-    fn spider(location: Vector) -> Self {
+    fn spider(uuid: &mut usize, location: Vector) -> Self {
+        *uuid += 1;
         Enemy {
+            uuid: *uuid,
             name: String::from("spider"),
             ai: Ai::Spider,
             id: 0,
@@ -109,8 +112,10 @@ impl Enemy {
         }
     }
 
-    fn goblin(location: Vector) -> Self {
+    fn goblin(uuid: &mut usize, location: Vector) -> Self {
+        *uuid += 1;
         Enemy {
+            uuid: *uuid,
             name: String::from("goblin"),
             ai: Ai::Ground,
             id: 1,
@@ -126,6 +131,7 @@ impl Enemy {
 }
 
 pub struct Controller {
+    uuid: usize,
     id_count: usize,
     enemies: Vec<Enemy>,
     players: Vec<PlayerData>,
@@ -136,15 +142,17 @@ pub struct Controller {
 
 impl Controller {
     pub fn new(players: Vec<PlayerData>, tilemap: Vec<Vec<usize>>, spawn_locations: Vec<[usize; 2]>) -> Self {
-        Controller { id_count: 0, enemies: vec![], players: players, tilemap: tilemap, spawn_locations: spawn_locations, packets: vec![] }
+        Controller { uuid: 0, id_count: 0, enemies: vec![], players, tilemap, spawn_locations, packets: vec![] }
     }
     pub fn update_players(&mut self, players: Vec<PlayerData>) {
+        println!("Num players: {}", players.len());
         self.players = players;
     }
     pub fn update_enemies(&mut self) -> Option<String> {
         let mut rng: ThreadRng = thread_rng();
         if self.enemies.len() > 0 {
             for i in 0..self.enemies.len() {
+                println!("Enemy X: {}", self.enemies[i].position.x);
                 let start: Position = Position::new(self.enemies[i].position.x.round() as usize, (self.enemies[i].position.y).round() as usize);
                 let mut min_dist: f32 = -1.0f32;
                 let mut closest_player_index: usize = 999;
@@ -225,12 +233,14 @@ impl Controller {
                     if let Some(location) = location {
                         if !is_solid(self.tilemap[location[1]][location[0]]) && location[0] != 0 && location[1] != 0 {
                             if rng.gen_bool(0.5f64) {
-                                self.enemies.push(Enemy::goblin(location.into()));
+                                self.enemies.push(Enemy::goblin(&mut self.uuid, location.into()));
                             }
                             else {
-                                self.enemies.push(Enemy::spider(location.into()));
+                                self.enemies.push(Enemy::spider(&mut self.uuid, location.into()));
                             }
-                            return Some(self.id_count.to_string());
+                            if let Some(e) = self.enemies.last() {
+                                    return Some(e.uuid.to_string());
+                            }
                         }
                     }
                 }
