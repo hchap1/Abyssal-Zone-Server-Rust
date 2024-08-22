@@ -1,38 +1,17 @@
-use crate::tilemap::Tilemap;
+use crate::{tilemap::Tilemap, vector::Vector};
 
 #[derive(Clone)]
 pub struct PlayerData {
-    pub x_position: f32,
-    pub y_position: f32,
+    pub position: Vector,
     crouching: bool,
     frame: i8,
     direction: i8,
     pub username: String
 }
 
-impl From<&str> for PlayerData {
-    fn from(data: &str) -> Self {
-        let components: Vec<&str> = data.split('!').collect::<Vec<&str>>()[0].split(',').collect();
-        if components.len() == 6 {
-            if let (Ok(x), Ok(y), c, Ok(f), Ok(d), n) = (
-                components[0].parse::<f32>(), // x
-                components[1].parse::<f32>(), // y
-                components[2],                // Crouching (1: true, 0: false)
-                components[3].parse::<i8>(),  // Frame
-                components[4].parse::<i8>(),  // Direction (1: RIGHT, -1: LEFT)
-                components[5]                 // Name
-            ) 
-            {
-                return PlayerData { x_position: x, y_position: y, crouching: c == "1", frame: f, direction: d, username: String::from(n) };
-            }
-        }
-        PlayerData { x_position: 0.0, y_position: 0.0, crouching: false, frame: 0, direction: 1, username: String::from("NONE") }
-    }
-}
-
 impl PlayerData {
     pub fn new() -> Self {
-        PlayerData { x_position: 0.0f32, y_position: 0.0f32, crouching: false, frame: 0, direction: 0, username: String::from("NONE") }
+        PlayerData { position: Vector::component(0f32, 0f32), crouching: false, frame: 0, direction: 0, username: String::from("NONE") }
     }
     pub fn parse_updates(&mut self, packets: &Vec<String>) {
         for packet in packets {
@@ -43,8 +22,7 @@ impl PlayerData {
             self.username = data[0].clone();
             if identifier == "pp" {
                 if let (Ok(x), Ok(y)) = (data[1].parse::<f32>(), data[2].parse::<f32>()) {
-                    self.x_position = x;
-                    self.y_position = y;
+                    self.position = Vector::component(x, y);
                 }
             }
             if identifier == "pf" {
@@ -61,32 +39,6 @@ impl PlayerData {
                 self.crouching = data[1] == "1";
             }
         }
-    }
-}
-
-pub struct Packet {
-    pub packet: String
-}
-
-impl From<&Vec<PlayerData>> for Packet {
-    fn from(data: &Vec<PlayerData>) -> Packet{
-        let mut packet: Packet = Packet { packet: String::from("|") };
-        for player_data in data {
-            let mut c: char = '0';
-            if player_data.crouching {
-                c = '1';
-            }
-            let string_data: String = format!("{},{},{},{},{},{}!", 
-                player_data.x_position, 
-                player_data.y_position, 
-                c,
-                player_data.frame, 
-                player_data.direction, 
-                player_data.username);
-            if packet.packet.len() > 2 { packet.packet.push('/'); }
-            packet.packet.push_str(&string_data);
-        }
-        return packet;
     }
 }
 

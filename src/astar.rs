@@ -3,6 +3,8 @@ use std::time::{Instant, Duration};
 use std::cmp::Ordering;
 use std::vec;
 
+use crate::vector::Vector;
+
 #[derive(PartialEq)]
 pub enum Ai {
     Spider,
@@ -14,7 +16,8 @@ pub enum Ai {
 pub enum Behaviour {
     SeekFromAnywhere,
     AttackMoving,
-    AttackSingle
+    AttackSingle,
+    AttackGroupFromClose
 }
 
 #[derive(Clone, Eq, PartialEq)]
@@ -143,7 +146,7 @@ fn walkable(tilemap: &Vec<Vec<usize>>, old_position: &Position, new_position: &P
     false
 }
 
-pub fn astar(tilemap: &Vec<Vec<usize>>, start: Position, end: Position, ai_type: &Ai) -> Option<Vec<Position>> {
+pub fn astar(tilemap: &Vec<Vec<usize>>, start: Position, end: Position, ai_type: &Ai) -> Option<Vec<Vector>> {
     let start_time = Instant::now();
     let run_duration = Duration::from_millis(10);
     let start_node = Node { parent: None, position: start.clone(), g: 0, h: 0, f: 0 };
@@ -180,7 +183,11 @@ pub fn astar(tilemap: &Vec<Vec<usize>>, start: Position, end: Position, ai_type:
                 }
             }
             path.reverse();
-            return Some(path);
+            let mut vec_path: Vec<Vector> = vec![];
+            for node in path {
+                vec_path.push(Vector::from(node));
+            }
+            return Some(vec_path);
         }
 
         // Find the children of the current node (based on adjacents).

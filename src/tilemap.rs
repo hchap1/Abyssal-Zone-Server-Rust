@@ -71,8 +71,8 @@ impl From<Vec<Vec<Room>>> for Tilemap {
                         let end: Position = Position::new(room_column * 32 + 32, room_row * 32 + (32 - next_room.tilemap.len()) + next_e);
                         if let Some(path) = astar(&tilemap.tilemap, start, end, &Ai::Corridor) {
                             for point in &path {
-                                let x: usize = point.x;
-                                let y: usize = point.y;
+                                let x: usize = point.x.round() as usize;
+                                let y: usize = point.y.round() as usize;
                                 tilemap.tilemap[y][x] = 2;
                                 tilemap.tilemap[y+1][x] = 2;
                                 if rng.gen_bool(0.04f64) {
@@ -93,8 +93,8 @@ impl From<Vec<Vec<Room>>> for Tilemap {
                         let end: Position = Position::new(room_column * 32 + next_e, room_row * 32 + 32 + (32 - next_room.tilemap.len()));
                         if let Some(path) = astar(&tilemap.tilemap, start, end, &Ai::Corridor) {
                             for point in &path {
-                                let x: usize = point.x;
-                                let y: usize = point.y;
+                                let x: usize = point.x.round() as usize;
+                                let y: usize = point.y.round() as usize;
                                 tilemap.tilemap[y][x] = 6;
                                 tilemap.tilemap[y][x+1] = 6;
                                 if rng.gen_bool(0.04f64) {

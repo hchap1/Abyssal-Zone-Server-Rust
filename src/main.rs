@@ -4,6 +4,7 @@ mod tilemap;
 mod astar;
 mod enemy;
 mod util;
+mod vector;
 
 use crate::network::Server;
 use crate::tilemap::{Tilemap, randomize_rooms};

@@ -70,6 +70,7 @@ fn listen(listener: Arc<Mutex<Listener>>, tcp_listener: TcpListener) {
     loop {
         match tcp_listener.accept() {
             Ok((mut stream, addr)) => {
+                println!("Listener accepted client: {addr}");
                 let mut listener = listener.lock().unwrap();
                 for packet in &listener.initial_packet {
                     let _ = stream.write_all(packet.as_bytes());
@@ -96,6 +97,7 @@ fn recv(receiver: Arc<Mutex<Receiver>>, mut stream: TcpStream) {
             }
             Ok(_) => match std::str::from_utf8(&buffer) {
                 Ok(data) => {
+                    println!("Received packet from client: |{}|", data.to_string());
                     let mut receiver = receiver.lock().unwrap();
                     let message: String = data.to_string();
                     let mut packets: Vec<String> = split_with_delimiter(message, "!");
@@ -360,6 +362,7 @@ fn accept(server: Arc<Mutex<Server>>, listener: Arc<Mutex<Listener>>) {
                     let mut tc = c.lock().unwrap();
                     tc.send_all(&outgoing);
                 }
+                println!("Server polled client: {addr}");
                 server.clients.push(c);
                 count += 1;
             }
@@ -433,8 +436,10 @@ fn push_updates_to_enemies(server: Arc<Mutex<Server>>, controller: Arc<Mutex<Con
             if !server.running { break; }
             for client in &server.clients {
                 let client = client.lock().unwrap();
+                println!("Investigating client!");
                 if let Some(player_data) = &client.player_data {
                     if player_data.username != "NONE" {
+                        println!("Client has data!");
                         active_player_data.push(player_data.clone());
                     }
                 }
